@@ -1,0 +1,10 @@
+{
+  "name": "local-ai-hub-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zero-dependency static server + /api proxy",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

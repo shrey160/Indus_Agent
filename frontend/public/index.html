@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LOCAL-AI-HUB</title>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/components.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle sidebar">&#9776;</button>
+      <span class="app-title">LOCAL-AI-HUB</span>
+      <span class="title-cursor" aria-hidden="true">&#9646;</span>
+      <span class="version-tag">v0.1 &middot; P1</span>
+      <span class="spacer"></span>
+      <div id="model-badge" class="model-chip" title="Active model">
+        <span id="model-chip-kind" class="chip-kind">&#8962;</span>
+        <span id="model-badge-text">no model</span>
+        <span class="badge-caret">&#9662;</span>
+        <div id="model-dropdown" class="model-dropdown hidden"></div>
+      </div>
+      <span id="status-dot" class="dot dot-pending" role="status" aria-label="System status"></span>
+    </header>
+    <div class="main-row">
+      <div id="scrim" class="scrim hidden"></div>
+      <aside id="sidebar" class="sidebar">
+        <div id="sidebar-sections"></div>
+      </aside>
+      <main class="chat">
+        <div id="log-search" class="log-search hidden">
+          <input id="log-search-input" type="text" placeholder="Filter log&hellip; (Esc to close)" aria-label="Filter log">
+        </div>
+        <div id="messages" class="messages"></div>
+        <div id="new-output-pill" class="new-output-pill hidden">&#9660; NEW OUTPUT</div>
+        <form id="chat-form" class="composer">
+          <textarea id="chat-input" rows="2" placeholder="Message&hellip;" aria-label="Message"></textarea>
+          <div class="composer-side">
+            <button id="send-btn" type="submit" class="btn btn-primary">[ SEND &#9166; ]</button>
+            <span class="composer-hint">&#9166; SEND &middot; &#8679;&#9166; NEWLINE</span>
+          </div>
+        </form>
+      </main>
+    </div>
+    <footer class="fnbar" id="fnbar"></footer>
+  </div>
+  <script src="/js/ui.js"></script>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/providers.js"></script>
+  <script src="/js/chat.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

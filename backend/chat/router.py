@@ -1,0 +1,150 @@
+import asyncio
+import json
+import logging
+
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+import db
+from providers import registry
+from providers.base import fmt_err
+from . import context
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api", tags=["chat"])
+
+
+class ChatRequest(BaseModel):
+    conversation_id: int | None = None
+    message: str
+
+
+def sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+async def resolve_active() -> tuple[dict | None, str | None, str | None, str | None]:
+    state = await db.fetchrow(
+        """
+        SELECT s.active_model, p.id, p.name, p.base_url, p.type
+        FROM app_state s
+        JOIN providers p ON p.id = s.active_provider_id
+        WHERE s.id = TRUE
+        """
+    )
+    if not state or not state["active_model"]:
+        return None, None, "no_model", None
+    statuses = await registry.detect_all()
+    status = statuses.get(state["id"])
+    if status is None or status.state == "down":
+        return None, None, "provider_down", state["name"]
+    return dict(state), state["active_model"], None, None
+
+
+@router.post("/chat")
+async def chat(body: ChatRequest):
+    provider_row, model, gate_error, gate_detail = await resolve_active()
+    if gate_error is not None:
+        async def gated():
+            yield sse({"error": gate_error, "detail": gate_detail})
+
+        return StreamingResponse(gated(), media_type="text/event-stream")
+
+    conversation_id = body.conversation_id
+    if conversation_id is None:
+        conversation_id = await db.fetchval(
+            "INSERT INTO conversations (title) VALUES ($1) RETURNING id",
+            body.message[:60],
+        )
+    else:
+        exists = await db.fetchval(
+            "SELECT 1 FROM conversations WHERE id = $1", conversation_id
+        )
+        if not exists:
+            conversation_id = await db.fetchval(
+                "INSERT INTO conversations (title) VALUES ($1) RETURNING id",
+                body.message[:60],
+            )
+    await db.execute(
+        "INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'user', $2)",
+        conversation_id,
+        body.message,
+    )
+    messages = await context.build_messages(conversation_id)
+    provider = registry.build_provider(provider_row)
+
+    async def stream():
+        full = ""
+        try:
+            async for event in provider.stream_chat(model, messages):
+                if event["type"] == "reasoning":
+                    yield sse({"reasoning": event["text"]})
+                else:
+                    full += event["text"]
+                    yield sse({"delta": event["text"]})
+        except asyncio.CancelledError:
+            if full:
+                await db.execute(
+                    """
+                    INSERT INTO messages (conversation_id, role, content, model)
+                    VALUES ($1, 'assistant', $2, $3)
+                    """,
+                    conversation_id,
+                    full,
+                    model,
+                )
+            raise
+        except Exception as exc:
+            logger.warning("chat stream failed: %s", fmt_err(exc))
+            yield sse({"error": "stream_interrupted", "detail": fmt_err(exc)})
+        if full:
+            message_id = await db.fetchval(
+                """
+                INSERT INTO messages (conversation_id, role, content, model)
+                VALUES ($1, 'assistant', $2, $3)
+                RETURNING id
+                """,
+                conversation_id,
+                full,
+                model,
+            )
+            yield sse(
+                {"done": True, "message_id": message_id, "conversation_id": conversation_id}
+            )
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/conversations")
+async def list_conversations() -> list[dict]:
+    rows = await db.fetch(
+        "SELECT id, title, created_at FROM conversations ORDER BY id DESC LIMIT 50"
+    )
+    return [dict(row) for row in rows]
+
+
+@router.get("/conversations/{conversation_id}/messages")
+async def conversation_messages(conversation_id: int) -> list[dict]:
+    rows = await db.fetch(
+        """
+        SELECT role, content, model, created_at FROM messages
+        WHERE conversation_id = $1
+        ORDER BY id
+        """,
+        conversation_id,
+    )
+    return [dict(row) for row in rows]
+
+
+@router.post("/conversations", status_code=201)
+async def create_conversation() -> dict:
+    row = await db.fetchrow(
+        "INSERT INTO conversations DEFAULT VALUES RETURNING id, title, created_at"
+    )
+    return dict(row)

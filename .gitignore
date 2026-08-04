@@ -1,0 +1,7 @@
+.env
+node_modules
+__pycache__
+*.pyc
+data/docs
+data/exports
+data/soul.md
