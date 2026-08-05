@@ -1,18 +1,12 @@
 import os
 
 from fastmcp import FastMCP
-from starlette.responses import JSONResponse
 
 from tools.util_datetime import get_datetime
 from tools.web_fetch import web_fetch
 from tools.web_search import web_search
 
 mcp = FastMCP("chat-toolbox")
-
-
-@mcp.custom_route("/health", methods=["GET"])
-async def health(request):
-    return JSONResponse({"status": "ok"})
 
 
 @mcp.tool(name="web.search")

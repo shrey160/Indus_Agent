@@ -7,7 +7,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import db
+from agent import loop as agent_loop
 from memory import extractor
+from mcp_client import manager as mcp_manager
 from providers import registry
 from providers.base import ProviderHTTPError, fmt_err
 from . import context
@@ -100,18 +102,29 @@ async def chat(body: ChatRequest):
 
     async def stream():
         full = ""
+        final_text = None
+        sources: list[dict] = []
         usage = None
         is_cloud = provider_row["kind"] == "cloud"
         try:
-            async for event in provider.stream_chat(model, messages):
+            async for event in agent_loop.run(
+                provider, model, messages, mcp_manager, native_tools=is_cloud
+            ):
                 etype = event["type"]
                 if etype == "reasoning":
                     yield sse({"reasoning": event["text"]})
-                elif etype == "usage":
-                    usage = event["usage"]
-                else:
+                elif etype == "content":
                     full += event["text"]
                     yield sse({"delta": event["text"]})
+                elif etype == "usage":
+                    usage = event["usage"]
+                elif etype == "tool":
+                    yield sse({"tool": event["tool"]})
+                elif etype == "tool_limit":
+                    yield sse({"tool_limit": event["detail"]})
+                elif etype == "final":
+                    final_text = event["text"]
+                    sources = event["sources"]
             cost = registry.cost_for(provider_row["id"], model, usage)
         except asyncio.CancelledError:
             if full:
@@ -147,7 +160,8 @@ async def chat(body: ChatRequest):
             logger.warning("chat stream failed: %s", fmt_err(exc))
             yield sse({"error": "stream_interrupted", "detail": fmt_err(exc)})
             return
-        if full:
+        reply = final_text if final_text else full
+        if reply:
             cost = registry.cost_for(provider_row["id"], model, usage)
             message_id = await db.fetchval(
                 """
@@ -156,11 +170,11 @@ async def chat(body: ChatRequest):
                 RETURNING id
                 """,
                 conversation_id,
-                full,
+                reply,
                 model,
                 cost,
             )
-            schedule_extraction(body.message, full, message_id)
+            schedule_extraction(body.message, reply, message_id)
             yield sse(
                 {
                     "done": True,
@@ -168,6 +182,7 @@ async def chat(body: ChatRequest):
                     "conversation_id": conversation_id,
                     "cost_usd": cost,
                     "cloud": is_cloud,
+                    "sources": sources,
                     "usage": (
                         {
                             "prompt": usage.get("prompt_tokens"),

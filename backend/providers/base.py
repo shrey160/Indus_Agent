@@ -92,6 +92,25 @@ class ProviderStatus:
         }
 
 
+def _build_calls(pending: dict[int, dict]) -> list[dict]:
+    calls = []
+    for idx in sorted(pending.keys()):
+        entry = pending[idx]
+        arguments = entry.get("arguments", "")
+        try:
+            parsed = json.loads(arguments) if arguments else {}
+        except json.JSONDecodeError:
+            parsed = {}
+        calls.append(
+            {
+                "id": entry.get("id", f"tool_{idx}"),
+                "name": entry.get("name", ""),
+                "arguments": parsed,
+            }
+        )
+    return calls
+
+
 class ProviderBase(ABC):
     def __init__(self, name: str, base_url: str):
         self.name = name
@@ -175,44 +194,13 @@ class ProviderBase(ABC):
                                 "arguments"
                             ]
                     finish_reason = choice.get("finish_reason")
-                    if finish_reason == "tool_calls" or pending_tool_calls:
-                        # Emit once the arguments look complete (tool_calls finished or stream ended).
-                        calls = []
-                        for idx in sorted(pending_tool_calls.keys()):
-                            entry = pending_tool_calls[idx]
-                            arguments = entry.get("arguments", "")
-                            try:
-                                parsed = json.loads(arguments) if arguments else {}
-                            except json.JSONDecodeError:
-                                parsed = {}
-                            calls.append(
-                                {
-                                    "id": entry.get("id", f"tool_{idx}"),
-                                    "name": entry.get("name", ""),
-                                    "arguments": parsed,
-                                }
-                            )
-                        if calls and (finish_reason == "tool_calls" or not content):
+                    if finish_reason == "tool_calls" and pending_tool_calls:
+                        calls = _build_calls(pending_tool_calls)
+                        if calls:
                             yield {"type": "tool_calls", "calls": calls}
-                            pending_tool_calls = {}
-                            if finish_reason == "tool_calls":
-                                return
+                        return
                 if pending_tool_calls:
-                    calls = []
-                    for idx in sorted(pending_tool_calls.keys()):
-                        entry = pending_tool_calls[idx]
-                        arguments = entry.get("arguments", "")
-                        try:
-                            parsed = json.loads(arguments) if arguments else {}
-                        except json.JSONDecodeError:
-                            parsed = {}
-                        calls.append(
-                            {
-                                "id": entry.get("id", f"tool_{idx}"),
-                                "name": entry.get("name", ""),
-                                "arguments": parsed,
-                            }
-                        )
+                    calls = _build_calls(pending_tool_calls)
                     if calls:
                         yield {"type": "tool_calls", "calls": calls}
 

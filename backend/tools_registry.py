@@ -7,6 +7,13 @@ from mcp_client.manager import MCPManager
 logger = logging.getLogger(__name__)
 
 
+KNOWN_TOOLS: dict[str, str] = {
+    "web.search": "Search the web via local SearXNG. Returns {query, results: [{title, url, snippet}], source}.",
+    "web.fetch": "Fetch a URL and return cleaned readable text. Returns {url, title, text, truncated, source}.",
+    "util.datetime": "Current date/time. Always call before reasoning about 'latest/today/recent'.",
+}
+
+
 async def ensure_tool_rows(tool_names: list[str]) -> dict[str, bool]:
     rows = await db.fetch("SELECT tool_name, enabled FROM tool_settings")
     enabled = {r["tool_name"]: r["enabled"] for r in rows}
@@ -25,6 +32,10 @@ async def get_tools(manager: MCPManager) -> list[dict]:
     raw_tools = await manager.list_tools()
     names = [t.name for t in raw_tools]
     enabled_map = await ensure_tool_rows(names)
+    # If the toolbox is unreachable, make sure we still have rows for known tools
+    # so the endpoint can report degraded instead of an empty list.
+    if not raw_tools or manager.health() != "ok":
+        enabled_map.update(await ensure_tool_rows(list(KNOWN_TOOLS.keys())))
 
     tools = []
     for tool in raw_tools:
@@ -44,6 +55,29 @@ async def get_tools(manager: MCPManager) -> list[dict]:
                 "server": "toolbox",
             }
         )
+
+    # If the manager could not refresh the live list, fall back to known tool rows
+    # stored in the database so the registry never silently returns [].
+    known_names = set(KNOWN_TOOLS.keys()) - {t["name"] for t in tools}
+    if known_names and manager.health() != "ok":
+        rows = await db.fetch(
+            "SELECT tool_name, enabled FROM tool_settings WHERE tool_name = ANY($1)",
+            list(known_names),
+        )
+        db_enabled = {r["tool_name"]: r["enabled"] for r in rows}
+        for name in known_names:
+            enabled = db_enabled.get(name, True)
+            health = "disabled" if not enabled else "degraded"
+            tools.append(
+                {
+                    "name": name,
+                    "description": KNOWN_TOOLS[name],
+                    "params_schema": {},
+                    "enabled": enabled,
+                    "health": health,
+                    "server": "toolbox",
+                }
+            )
     return tools
 
 
