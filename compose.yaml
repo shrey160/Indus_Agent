@@ -51,6 +51,11 @@ services:
       SEARXNG_BASE_URL: http://searxng:8080/
       SEARXNG_SECRET: ${SEARXNG_SECRET}
     networks: [appnet]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=3)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   frontend:
     build: ./frontend

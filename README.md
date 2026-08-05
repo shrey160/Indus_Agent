@@ -210,6 +210,43 @@ local-ai-hub/
 - API keys are encrypted at rest (Phase 2) and never returned to the frontend or logged.
 - Cloud provider base URLs must be HTTPS.
 
+## Debugging the MCP toolbox
+
+The `toolbox` service (FastMCP, streamable HTTP) is internal-only — nothing is published in production. To inspect its tools directly, use the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector):
+
+**Dev mode** (`compose.dev.yaml` publishes `127.0.0.1:9000`):
+
+```bash
+npx @modelcontextprotocol/inspector
+# in the UI: Transport type = Streamable HTTP, URL = http://localhost:9000/mcp
+```
+
+**Production mode** — run the inspector in a throwaway container on the app network:
+
+```bash
+docker run -it --rm --network local-ai-hub_appnet -p 127.0.0.1:6274:6274 \
+  node:20-alpine npx -y @modelcontextprotocol/inspector
+# in the UI: Transport type = Streamable HTTP, URL = http://toolbox:9000/mcp
+# if the browser can't connect, add:  -e HOST=0.0.0.0
+```
+
+From the inspector you can list tools (expect `web.search`, `web.fetch`), view their input schemas, and call them with custom args — useful for isolating whether a problem is in the tool, the backend client, or the LLM.
+
+Quick toolbox troubleshooting without the inspector:
+
+```bash
+curl localhost:8000/api/tools                                   # live health + enabled state per tool
+curl -X POST localhost:8000/api/tools/web.search/test \
+  -H 'content-type: application/json' -d '{"args":{"query":"ollama"}}'
+```
+
+| Symptom | Likely cause |
+|---------|--------------|
+| Tools show `"health":"degraded"` | Toolbox container down/restarting — the backend reconnects automatically; check `docker compose logs toolbox`. |
+| Tool list empty | Backend never connected at startup; check `MCP_TOOLBOX_URL` and `docker compose logs api`. |
+| `web.search` returns nothing / errors | SearXNG JSON format disabled — `searxng/settings.yml` must contain `formats: [html, json]`; also check `SEARXNG_SECRET` is set and not the literal `${SEARXNG_SECRET}`. |
+| `web.fetch` hangs | Per-tool 30s cap should fire; if it doesn't, `docker compose restart toolbox`. |
+
 ## Troubleshooting
 
 | Symptom | Fix |
