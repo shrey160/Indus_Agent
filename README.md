@@ -79,7 +79,7 @@ Generate a Fernet key:
 python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
 ```
 
-The `TEST_OPENROUTER_KEY`, `OPENROUTER_ENDPOINT`, and `ALLOWED_MODEL_OPENROUTER` variables are optional and only used by future (Phase 2) testing — you can leave them empty.
+The `TEST_OPENROUTER_KEY`, `OPENROUTER_ENDPOINT`, and `ALLOWED_MODEL_OPENROUTER` variables are optional and only used for Phase 2 acceptance testing — you can leave them empty.
 
 ### 2. Build and run
 
@@ -126,6 +126,19 @@ Containers reach LLM servers on the host via `host.docker.internal` (compose map
 
 Keyboard shortcuts: **F1** help, **F2** sidebar, **F4** new chat, **F5** re-detect providers, **F10** log filter, **ESC** dismiss.
 
+## Cloud providers (OpenRouter etc.)
+
+Beyond local models, you can add an API-key provider and use both from one picker:
+
+1. Open the **Providers** sidebar → `[ + ADD PROVIDER ]` → select **`(•) Cloud API`**.
+2. Pick a **preset** (OpenRouter, OpenAI, Groq, Together) — the base URL pre-fills. Override with an `https://` URL if needed.
+3. Paste your **API key** (with the `[SHOW]` toggle) → `[ VALIDATE & SAVE ]`.
+   - The key is validated against the provider before it is saved (a bad key → 400, nothing stored).
+   - It is stored **Fernet-encrypted** in Postgres; only a hint like `sk-or-····8f2a` is ever returned to the UI or logs.
+4. The model dropdown splits into `── LOCAL ──` / `── CLOUD ──` groups. Free (`:free`) models get a `free` chip; `★` pins any model into a `── PINNED ──` group shown first. Cloud replies get a ☁ marker and a cost footnote (e.g. `~$0.0004`) when the provider reports token usage.
+
+Privacy: the first time a cloud model is activated, a one-time notice explains that messages leave your device. Cloud providers store keys encrypted with `SECRET_KEY` — keep `.env` backed up, because a different `SECRET_KEY` makes stored cloud keys undecryptable.
+
 ## Development (live reload)
 
 ```bash
@@ -139,7 +152,7 @@ Python edits trigger uvicorn reload, `server.js` edits restart Node, static file
 | Variable | Required | Purpose |
 |----------|:---:|---------|
 | `DB_PASSWORD` | yes | Postgres password (set in compose's `DATABASE_URL`) |
-| `SECRET_KEY` | yes | Fernet key — encrypts cloud API keys at rest (Phase 2) |
+| `SECRET_KEY` | yes | Fernet key — encrypts cloud API keys at rest |
 | `TEST_OPENROUTER_KEY` | optional | OpenRouter key for Phase 2 acceptance testing |
 | `OPENROUTER_ENDPOINT` | optional | Override OpenRouter base URL for testing |
 | `ALLOWED_MODEL_OPENROUTER` | optional | Restrict OpenRouter models during testing |

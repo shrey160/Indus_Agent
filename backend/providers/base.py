@@ -18,25 +18,77 @@ def fmt_err(exc: Exception) -> str:
     return msg if msg else type(exc).__name__
 
 
+def compute_cost(pricing, usage) -> float | None:
+    if not pricing or not usage:
+        return None
+    try:
+        pin = float(pricing.get("prompt", 0))
+        pout = float(pricing.get("completion", 0))
+    except (TypeError, ValueError):
+        return None
+    pt = usage.get("prompt_tokens") or 0
+    ct = usage.get("completion_tokens") or 0
+    if pt == 0 and ct == 0:
+        return None
+    return round(pt * pin + ct * pout, 6)
+
+
+class ProviderHTTPError(Exception):
+    def __init__(self, status_code: int, detail: str):
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+async def _body_peek(response: httpx.Response, limit: int = 300) -> str:
+    try:
+        chunks = [
+            part.decode(errors="replace")
+            async for part in response.aiter_bytes()
+            if part
+        ]
+        body = "".join(chunks)
+    except Exception:
+        body = ""
+    body = body.strip()
+    if len(body) > limit:
+        body = body[:limit] + "…"
+    return body or type(response).__name__
+
+
 @dataclass
 class ModelInfo:
     id: str
     size_bytes: int | None = None
+    pricing: dict | None = None
+    context_length: int | None = None
+    is_free: bool | None = None
 
 
 @dataclass
 class ProviderStatus:
-    state: str  # 'up' | 'up_empty' | 'down' | 'checking'
+    state: str  # 'up' | 'up_empty' | 'down' | 'checking' | 'bad_key' | 'no_credits' | 'unreachable'
     latency_ms: int | None = None
     error: str | None = None
     models: list[ModelInfo] = field(default_factory=list)
+    balance: str | None = None
 
     def to_dict(self) -> dict:
         return {
             "state": self.state,
             "latency_ms": self.latency_ms,
             "error": self.error,
-            "models": [{"id": m.id, "size_bytes": m.size_bytes} for m in self.models],
+            "models": [
+                {
+                    "id": m.id,
+                    "size_bytes": m.size_bytes,
+                    "pricing": m.pricing,
+                    "context_length": m.context_length,
+                    "is_free": m.is_free,
+                }
+                for m in self.models
+            ],
+            "balance": self.balance,
         }
 
 
@@ -44,6 +96,15 @@ class ProviderBase(ABC):
     def __init__(self, name: str, base_url: str):
         self.name = name
         self.base_url = base_url.rstrip("/")
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {}
+
+    def _models_path(self) -> str:
+        return f"{self.base_url}/v1/models"
+
+    def _chat_path(self) -> str:
+        return f"{self.base_url}/v1/chat/completions"
 
     @abstractmethod
     async def ping(self) -> ProviderStatus: ...
@@ -57,10 +118,14 @@ class ProviderBase(ABC):
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             async with client.stream(
                 "POST",
-                f"{self.base_url}/v1/chat/completions",
+                self._chat_path(),
+                headers=self._auth_headers(),
                 json={"model": model, "messages": messages, "stream": True},
             ) as response:
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    raise ProviderHTTPError(
+                        response.status_code, fmt_err(await _body_peek(response))
+                    )
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -71,6 +136,9 @@ class ProviderBase(ABC):
                         chunk = json.loads(payload)
                     except json.JSONDecodeError:
                         continue
+                    usage = chunk.get("usage")
+                    if usage and (usage.get("prompt_tokens") is not None or usage.get("completion_tokens") is not None):
+                        yield {"type": "usage", "usage": usage}
                     choices = chunk.get("choices") or []
                     if not choices:
                         continue
@@ -89,7 +157,8 @@ class ProviderBase(ABC):
         start = time.monotonic()
         async with httpx.AsyncClient(timeout=WARMUP_TIMEOUT) as client:
             response = await client.post(
-                f"{self.base_url}/v1/chat/completions",
+                self._chat_path(),
+                headers=self._auth_headers(),
                 json={
                     "model": model,
                     "messages": [{"role": "user", "content": "hi"}],

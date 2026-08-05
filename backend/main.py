@@ -63,7 +63,7 @@ async def health():
 
 @app.get("/api/info")
 async def info():
-    return {"name": "local-ai-hub", "phase": 1, "db": await db.check()}
+    return {"name": "local-ai-hub", "phase": 2, "db": await db.check()}
 
 
 class EchoIn(BaseModel):

@@ -8,7 +8,7 @@ from .base import PING_TIMEOUT, ModelInfo, ProviderBase, ProviderStatus, fmt_err
 class OpenAICompatProvider(ProviderBase):
     async def _list(self, timeout: float) -> list[ModelInfo]:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(f"{self.base_url}/v1/models")
+            response = await client.get(self._models_path())
             response.raise_for_status()
         return [ModelInfo(id=m["id"]) for m in response.json().get("data", [])]
 

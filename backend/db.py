@@ -40,6 +40,19 @@ DDL: list[str] = [
         created_at TIMESTAMPTZ DEFAULT now()
     )
     """,
+    "ALTER TABLE providers ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'local'",
+    "ALTER TABLE providers ADD COLUMN IF NOT EXISTS preset TEXT",
+    "ALTER TABLE providers ADD COLUMN IF NOT EXISTS api_key_enc BYTEA",
+    "ALTER TABLE providers ADD COLUMN IF NOT EXISTS key_hint TEXT",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(10,6)",
+    """
+    CREATE TABLE IF NOT EXISTS provider_favorites (
+        provider_id INT REFERENCES providers(id) ON DELETE CASCADE,
+        model_id TEXT NOT NULL,
+        pinned_at TIMESTAMPTZ DEFAULT now(),
+        PRIMARY KEY (provider_id, model_id)
+    )
+    """,
 ]
 
 DEFAULT_PROVIDERS = [

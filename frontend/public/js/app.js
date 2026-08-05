@@ -97,6 +97,15 @@
       } else if (provider.status.state === 'down') {
         dot.className = 'dot dot-err';
         dot.title = active.provider_name + ' is down — ' + (provider.status.error || 'unreachable');
+      } else if (provider.status.state === 'bad_key') {
+        dot.className = 'dot dot-err';
+        dot.title = active.provider_name + ' — invalid API key, open Providers to edit';
+      } else if (provider.status.state === 'no_credits') {
+        dot.className = 'dot dot-err';
+        dot.title = active.provider_name + ' — no credits';
+      } else if (provider.status.state === 'unreachable') {
+        dot.className = 'dot dot-grey';
+        dot.title = active.provider_name + ' is unreachable — local models still available';
       } else {
         dot.className = 'dot dot-pending';
         dot.title = 'Checking providers…';

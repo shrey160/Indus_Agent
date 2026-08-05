@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 import db
 from providers import registry
-from providers.base import fmt_err
+from providers.base import ProviderHTTPError, fmt_err
 from . import context
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def sse(payload: dict) -> str:
 async def resolve_active() -> tuple[dict | None, str | None, str | None, str | None]:
     state = await db.fetchrow(
         """
-        SELECT s.active_model, p.id, p.name, p.base_url, p.type
+        SELECT s.active_model, p.id, p.name, p.base_url, p.type, p.kind, p.key_hint, p.api_key_enc
         FROM app_state s
         JOIN providers p ON p.id = s.active_provider_id
         WHERE s.id = TRUE
@@ -38,8 +38,14 @@ async def resolve_active() -> tuple[dict | None, str | None, str | None, str | N
         return None, None, "no_model", None
     statuses = await registry.detect_all()
     status = statuses.get(state["id"])
-    if status is None or status.state == "down":
+    if status is None:
         return None, None, "provider_down", state["name"]
+    if status.state == "down" or status.state == "unreachable":
+        return None, None, "provider_down", state["name"]
+    if status.state == "bad_key":
+        return dict(state), None, "bad_key", "invalid API key for " + state["name"]
+    if status.state == "no_credits":
+        return dict(state), None, "no_credits", "no credits for " + state["name"]
     return dict(state), state["active_model"], None, None
 
 
@@ -48,7 +54,14 @@ async def chat(body: ChatRequest):
     provider_row, model, gate_error, gate_detail = await resolve_active()
     if gate_error is not None:
         async def gated():
-            yield sse({"error": gate_error, "detail": gate_detail})
+            yield sse(
+                {
+                    "error": gate_error,
+                    "detail": gate_detail,
+                    "provider_id": provider_row["id"] if provider_row else None,
+                    "provider_name": provider_row["name"] if provider_row else None,
+                }
+            )
 
         return StreamingResponse(gated(), media_type="text/event-stream")
 
@@ -77,41 +90,85 @@ async def chat(body: ChatRequest):
 
     async def stream():
         full = ""
+        usage = None
+        is_cloud = provider_row["kind"] == "cloud"
         try:
             async for event in provider.stream_chat(model, messages):
-                if event["type"] == "reasoning":
+                etype = event["type"]
+                if etype == "reasoning":
                     yield sse({"reasoning": event["text"]})
+                elif etype == "usage":
+                    usage = event["usage"]
                 else:
                     full += event["text"]
                     yield sse({"delta": event["text"]})
+            cost = registry.cost_for(provider_row["id"], model, usage)
         except asyncio.CancelledError:
             if full:
+                cost = registry.cost_for(provider_row["id"], model, usage)
                 await db.execute(
                     """
-                    INSERT INTO messages (conversation_id, role, content, model)
-                    VALUES ($1, 'assistant', $2, $3)
+                    INSERT INTO messages (conversation_id, role, content, model, cost_usd)
+                    VALUES ($1, 'assistant', $2, $3, $4)
                     """,
                     conversation_id,
                     full,
                     model,
+                    cost,
                 )
             raise
+        except ProviderHTTPError as exc:
+            code = {401: "bad_key", 402: "no_credits", 429: "rate_limited"}.get(
+                exc.status_code, "stream_interrupted"
+            )
+            logger.warning("chat stream failed (%s): %s", code, exc.detail)
+            yield sse(
+                {
+                    "error": code,
+                    "detail": exc.detail,
+                    "provider_id": provider_row["id"],
+                    "provider_name": provider_row["name"],
+                }
+            )
+            return
         except Exception as exc:
             logger.warning("chat stream failed: %s", fmt_err(exc))
             yield sse({"error": "stream_interrupted", "detail": fmt_err(exc)})
+            return
         if full:
+            cost = registry.cost_for(provider_row["id"], model, usage)
             message_id = await db.fetchval(
                 """
-                INSERT INTO messages (conversation_id, role, content, model)
-                VALUES ($1, 'assistant', $2, $3)
+                INSERT INTO messages (conversation_id, role, content, model, cost_usd)
+                VALUES ($1, 'assistant', $2, $3, $4)
                 RETURNING id
                 """,
                 conversation_id,
                 full,
                 model,
+                cost,
             )
             yield sse(
-                {"done": True, "message_id": message_id, "conversation_id": conversation_id}
+                {
+                    "done": True,
+                    "message_id": message_id,
+                    "conversation_id": conversation_id,
+                    "cost_usd": cost,
+                    "cloud": is_cloud,
+                    "usage": (
+                        {
+                            "prompt": usage.get("prompt_tokens"),
+                            "completion": usage.get("completion_tokens"),
+                            "total": usage.get("total_tokens"),
+                            "reasoning": usage.get("reasoning_tokens"),
+                        }
+                        if usage
+                        else None
+                    ),
+                    "context_length": registry.context_length(
+                        provider_row["id"], model
+                    ),
+                }
             )
 
     return StreamingResponse(

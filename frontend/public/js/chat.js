@@ -73,10 +73,34 @@ window.Chat = (() => {
     scrollStick(was);
   }
 
+  function errorLine(message, buttons) {
+    clearEmpty();
+    const was = atBottom();
+    const { line, content } = logLine('ERR', 'role-err', message);
+    line.classList.add('line-err');
+    if (buttons && buttons.length) {
+      const actions = el('div', 'log-actions');
+      for (const b of buttons) actions.appendChild(b);
+      content.appendChild(actions);
+    }
+    messagesEl.appendChild(line);
+    scrollStick(was);
+  }
+
   function gateBubble(payload) {
-    if (payload.error === 'provider_down') {
+    if (payload.error === 'bad_key') {
+      const b = el('button', 'btn', '[ EDIT KEY ]');
+      b.addEventListener('click', () => {
+        if (window.Providers && window.Providers.editKey) window.Providers.editKey(payload.provider_id, payload.provider_name);
+      });
+      errorLine('Invalid API key for ' + (payload.provider_name || 'the cloud provider') + '.', [b]);
+    } else if (payload.error === 'no_credits') {
+      errorLine('The provider has no credits' + (payload.detail ? ': ' + payload.detail : '.') + ' Check its billing in the Providers section.', []);
+    } else if (payload.error === 'rate_limited') {
+      errorLine('Rate limited — try again shortly.', []);
+    } else if (payload.error === 'provider_down') {
       addErrLine((payload.detail || 'The active provider') +
-        ' is not running. Start it (see Providers → How to start ▾) and send again.', true);
+        ' is not reachable. Check that it is running (local) or online (cloud) and send again.', true);
     } else {
       addErrLine('No model activated. Pick one in Providers → Models ▾.', true);
     }
@@ -126,7 +150,33 @@ window.Chat = (() => {
     if (!on) inputEl.focus();
   }
 
-  async function activateModel(providerId, providerName, model) {
+  async function activateModel(providerId, providerName, model, kind) {
+    const go = () => doActivate(providerId, providerName, model);
+    if (kind === 'cloud') {
+      maybePrivacyNotice(providerName, go);
+    } else {
+      go();
+    }
+  }
+
+  function maybePrivacyNotice(providerName, next) {
+    if (localStorage.getItem('cloudPrivacyNotice') === '1') { next(); return; }
+    const wrap = el('div');
+    wrap.appendChild(el('p', 'privacy-note',
+      'Messages now leave this device and go to ' + (providerName || 'the cloud provider') +
+      '. Your prompts and the replies are sent to a third-party API. No API key is ever stored in the browser or sent back to you.'));
+    const actions = el('div', 'modal-actions');
+    const dont = el('button', 'btn', '[ DON\u2019T SHOW AGAIN ]');
+    const under = el('button', 'btn btn-primary', '[ I UNDERSTAND ]');
+    dont.addEventListener('click', () => { localStorage.setItem('cloudPrivacyNotice', '1'); window.UI.closeModal(); next(); });
+    under.addEventListener('click', () => { window.UI.closeModal(); next(); });
+    actions.appendChild(dont);
+    actions.appendChild(under);
+    wrap.appendChild(actions);
+    window.UI.openModal('CLOUD PRIVACY', wrap);
+  }
+
+  async function doActivate(providerId, providerName, model) {
     badgeText.textContent = 'loading ' + model + '…';
     badgeEl.classList.add('loading');
     const controller = new AbortController();
@@ -176,6 +226,7 @@ window.Chat = (() => {
     setStreaming(true);
     let accumulated = '';
     let reasoningAccumulated = '';
+    let firstTokenAt = null;
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -200,6 +251,7 @@ window.Chat = (() => {
           const was = atBottom();
           if (payload.delta) {
             stream.thinking.classList.add('hidden');
+            if (firstTokenAt === null) firstTokenAt = performance.now();
             accumulated += payload.delta;
             stream.body.textContent = accumulated;
             maybeScroll(was);
@@ -209,7 +261,7 @@ window.Chat = (() => {
             stream.reasoning.classList.remove('hidden');
             stream.reasoning.textContent = reasoningAccumulated;
             maybeScroll(was);
-          } else if (payload.error === 'no_provider' || payload.error === 'no_model' || payload.error === 'provider_down') {
+          } else if (payload.error === 'no_provider' || payload.error === 'no_model' || payload.error === 'provider_down' || payload.error === 'bad_key' || payload.error === 'no_credits' || payload.error === 'rate_limited') {
             stream.line.remove();
             gateBubble(payload);
           } else if (payload.error === 'stream_interrupted') {
@@ -217,14 +269,48 @@ window.Chat = (() => {
             stream.cursor.remove();
             stream.body.textContent = accumulated + (accumulated ? '\n' : '') +
               '[stream interrupted' + (payload.detail ? ': ' + payload.detail : '') + ']';
+            const retry = el('button', 'btn', '[ \u27F3 RETRY ]');
+            retry.addEventListener('click', () => { send(message); });
+            const actions = el('div', 'log-actions');
+            actions.appendChild(retry);
+            stream.line.querySelector('.log-content').appendChild(actions);
           } else if (payload.done) {
             stream.thinking.classList.add('hidden');
             stream.cursor.remove();
             conversationId = payload.conversation_id;
-            const secs = ((performance.now() - started) / 1000).toFixed(1);
-            const meta = el('div', 'log-meta',
-              (activeModelId || 'unknown') + ' · ' + secs + 's');
-            stream.line.querySelector('.log-content').appendChild(meta);
+            const doneAt = performance.now();
+            const secs = ((doneAt - started) / 1000).toFixed(1);
+            const bits = [activeModelId || 'unknown', secs + 's'];
+            if (firstTokenAt !== null) {
+              bits.push('ttft ' + ((firstTokenAt - started) / 1000).toFixed(2) + 's');
+            }
+            if (payload.usage && payload.usage.completion) {
+              const dur = firstTokenAt !== null ? (doneAt - firstTokenAt) / 1000 : secs;
+              bits.push((dur > 0 ? payload.usage.completion / dur : 0).toFixed(0) + ' t/s');
+            } else if (firstTokenAt !== null && accumulated.length > 4) {
+              const dur = (doneAt - firstTokenAt) / 1000;
+              bits.push('~' + (dur > 0 ? (accumulated.length / 4) / dur : 0).toFixed(0) + ' t/s');
+            }
+            if (payload.cost_usd !== null && payload.cost_usd !== undefined) {
+              bits.push('~$' + Number(payload.cost_usd).toFixed(4));
+            }
+            const meta = el('div', 'log-meta', bits.join(' · '));
+            if (payload.cloud) meta.appendChild(el('span', 'log-cloud', ' ☁'));
+            const contentEl = stream.line.querySelector('.log-content');
+            contentEl.appendChild(meta);
+            const stats = [];
+            if (payload.usage) {
+              if (payload.usage.prompt != null) stats.push('p ' + payload.usage.prompt);
+              if (payload.usage.completion != null) stats.push('c ' + payload.usage.completion);
+              if (payload.usage.total != null) stats.push('t ' + payload.usage.total);
+              if (payload.usage.reasoning != null) stats.push('r ' + payload.usage.reasoning);
+              if (payload.usage.prompt != null && payload.context_length) {
+                stats.push('ctx ' + fmtTokens(payload.usage.prompt) + '/' + fmtTokens(payload.context_length));
+              }
+            }
+            if (stats.length) {
+              contentEl.appendChild(el('div', 'log-meta log-meta-stats', 'tokens · ' + stats.join(' ')));
+            }
           }
         }
       }
@@ -263,37 +349,94 @@ window.Chat = (() => {
     return gb >= 0.1 ? gb.toFixed(1) + ' GB' : Math.round(bytes / 1e6) + ' MB';
   }
 
+  function fmtTokens(n) {
+    return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+  }
+
+  function priceStr(m) {
+    if (!m.pricing || m.pricing.prompt === undefined || m.pricing.prompt === null) return null;
+    const per_m = parseFloat(m.pricing.prompt) * 1e6;
+    return Number.isFinite(per_m) ? '$' + per_m.toFixed(2) + '/M' : null;
+  }
+
+  function dropdownGroup(holder, title) {
+    const group = el('div', 'dropdown-group');
+    group.appendChild(document.createTextNode('── '));
+    group.appendChild(el('b', '', title.toUpperCase()));
+    group.appendChild(document.createTextNode(' ' + '─'.repeat(Math.max(2, 24 - title.length))));
+    holder.appendChild(group);
+  }
+
   function renderModelRows(holder, providers, filter) {
     const needles = filter.trim().toLowerCase();
-    let any = false;
+    const pinned = [];
+    const groups = [];
     for (const p of providers) {
-      if (p.status.state === 'down' || p.status.models.length === 0) continue;
-      const models = p.status.models.filter((m) => !needles || m.id.toLowerCase().includes(needles));
-      if (models.length === 0) continue;
-      const group = el('div', 'dropdown-group');
-      group.appendChild(document.createTextNode('── '));
-      group.appendChild(el('b', '', p.name.toUpperCase()));
-      group.appendChild(document.createTextNode(' ' + '─'.repeat(Math.max(2, 24 - p.name.length))));
-      holder.appendChild(group);
-      for (const m of models) {
-        any = true;
+      if (p.status.state === 'down' || p.status.state === 'unreachable' || p.status.state === 'bad_key' || p.status.state === 'no_credits') continue;
+      if (p.status.models.length === 0) continue;
+      const items = [];
+      for (const m of p.status.models) {
+        if (needles && !m.id.toLowerCase().includes(needles)) continue;
+        m._providerId = p.id;
+        m._providerLabel = p.name;
+        m._cluster = p.kind === 'cloud' ? 'cloud' : 'local';
+        if (m.pinned) pinned.push(m);
+        else items.push(m);
+      }
+      if (items.length) groups.push({ name: p.name, cloud: p.kind === 'cloud', items });
+    }
+    groups.sort((a, b) => (a.cloud === b.cloud ? a.name.localeCompare(b.name) : (a.cloud ? 1 : -1)));
+    const draw = (items, withProvider) => {
+      for (const m of items) {
         const item = el('div', 'dropdown-model');
-        item.appendChild(el('span', '', m.id));
-        item.appendChild(el('span', 'model-meta', m.size_bytes ? formatSize(m.size_bytes) : ''));
-        if (p.id === activeProviderId && m.id === activeModelId) item.classList.add('active');
+        item.appendChild(el('span', '', withProvider ? m._providerLabel + ' · ' + m.id : m.id));
+        const meta = el('span', 'model-meta');
+        const price = priceStr(m);
+        if (price) meta.appendChild(document.createTextNode(price));
+        if (m.is_free) meta.appendChild(el('span', 'chip-free', 'free'));
+        if (m.size_bytes) meta.appendChild(document.createTextNode(' ' + formatSize(m.size_bytes)));
+        const pin = el('button', 'btn model-pin', m.pinned ? '★' : '☆');
+        pin.title = m.pinned ? 'Unpin' : 'Pin';
+        pin.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          togglePin(m, pin);
+        });
+        if (m._providerId === activeProviderId && m.id === activeModelId) item.classList.add('active');
+        item.appendChild(meta);
+        item.appendChild(pin);
         item.addEventListener('click', async (ev) => {
           ev.stopPropagation();
           dropdown.classList.add('hidden');
-          await activateModel(p.id, p.name, m.id);
+          await activateModel(m._providerId, m._providerLabel, m.id, m._cluster);
         });
         holder.appendChild(item);
       }
+    };
+    let any = false;
+    if (pinned.length) { dropdownGroup(holder, 'PINNED'); draw(pinned, true); any = true; }
+    for (const g of groups) {
+      dropdownGroup(holder, (g.cloud ? '☁ ' : '') + g.name + ' · ' + g.items.length);
+      draw(g.items, false);
+      any = true;
     }
     if (!any) {
       const empty = el('div', 'dropdown-group');
       empty.appendChild(el('b', '', needles ? 'NO MATCHES' : 'NO MODELS AVAILABLE'));
       holder.appendChild(empty);
     }
+  }
+
+  async function togglePin(m, pinEl) {
+    try {
+      const res = await fetch(`/api/providers/${m._providerId}/favorite`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model_id: m.id }),
+      });
+      const out = await res.json();
+      m.pinned = out.pinned;
+      pinEl.textContent = out.pinned ? '★' : '☆';
+    } catch (e) { /* keep */ }
   }
 
   async function openDropdown() {
