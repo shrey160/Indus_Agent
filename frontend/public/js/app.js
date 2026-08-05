@@ -7,6 +7,10 @@
         window.Sidebar.openSection('providers');
         window.Sidebar.open();
       } },
+    { key: 'F3', label: 'TOOLS', action: () => {
+        window.Sidebar.openSection('tools');
+        window.Sidebar.open();
+      } },
     { key: 'F4', label: 'NEW CHAT', action: () => window.Chat.newChat() },
     { key: 'F5', label: 'RE-DETECT', action: () => window.Providers && window.Providers.redetect() },
     { key: 'F10', label: 'SEARCH', action: () => window.Chat.toggleSearch() },
@@ -18,6 +22,7 @@
     const rows = [
       ['F1', 'This cheatsheet'],
       ['F2', 'Toggle providers sidebar'],
+      ['F3', 'Tools sidebar'],
       ['F4', 'New chat'],
       ['F5', 'Re-detect providers'],
       ['F10', 'Filter chat log'],

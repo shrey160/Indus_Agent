@@ -844,3 +844,86 @@
   gap: 6px;
   margin-top: 8px;
 }
+
+/* ── tools section ── */
+.tool-desc {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-health {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.tool-health .provider-state {
+  margin-top: 0;
+}
+
+.tool-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tool-field-name {
+  font-size: var(--fs-micro);
+  color: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.tool-result-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-micro);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-result-err {
+  color: var(--red);
+}
+
+/* ── chat tool chips ── */
+.log-line.line-tool .log-content {
+  color: var(--text-1);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.log-line.line-tool .log-content.expanded {
+  white-space: pre-wrap;
+}
+
+.log-line.line-tool.chip-err .log-content {
+  color: var(--red);
+}
+
+/* ── cited sources ── */
+.log-sources {
+  font-size: var(--fs-small);
+  color: var(--text-2);
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.src-link {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+.src-link:hover {
+  text-decoration: underline;
+}

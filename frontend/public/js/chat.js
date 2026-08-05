@@ -5,7 +5,67 @@ window.Chat = (() => {
   let abortController = null;
   let activeProviderId = null;
   let activeModelId = null;
+  let openChips = [];
   let messagesEl, inputEl, sendBtn, badgeEl, badgeText, dropdown, pillEl, searchWrap, searchInput;
+
+  const TOOL_ICONS = { 'web.search': '🔍', 'web.fetch': '📄', 'util.datetime': '🕐' };
+
+  function argSummary(args) {
+    if (!args || typeof args !== 'object') return '';
+    const v = args.query || args.url || Object.values(args).find((x) => typeof x === 'string');
+    if (!v) return '';
+    const s = String(v);
+    return ' "' + (s.length > 48 ? s.slice(0, 48) + '…' : s) + '"';
+  }
+
+  function toolRunning(stream, tool) {
+    const { line, content } = logLine('TOOL', 'role-tool');
+    line.classList.add('line-tool');
+    const icon = TOOL_ICONS[tool.name] || '🔧';
+    content.textContent = icon + ' ' + tool.name + argSummary(tool.args) + ' · running…';
+    content.addEventListener('click', () => content.classList.toggle('expanded'));
+    messagesEl.insertBefore(line, stream.line);
+    openChips.push({ name: tool.name, line, content, icon, args: tool.args });
+  }
+
+  function toolDone(tool) {
+    let idx = openChips.findIndex((c) => c.name === tool.name);
+    if (idx === -1 && openChips.length) idx = 0;
+    if (idx === -1) return;
+    const chip = openChips.splice(idx, 1)[0];
+    const base = chip.icon + ' ' + chip.name + argSummary(chip.args);
+    if (tool.error) {
+      chip.line.classList.add('chip-err');
+      chip.content.textContent = base + ' · failed: ' + tool.error;
+      return;
+    }
+    const bits = [base];
+    const p = tool.result_preview;
+    if (p && Array.isArray(p.results)) bits.push(p.results.length + ' results');
+    if (tool.latency_ms != null) bits.push(tool.latency_ms + 'ms');
+    chip.content.textContent = bits.join(' · ');
+  }
+
+  function sysLine(stream, text) {
+    const { line } = logLine('SYS', 'role-sys', text);
+    messagesEl.insertBefore(line, stream.line);
+  }
+
+  function sourcesBlock(sources) {
+    const wrap = el('div', 'log-sources');
+    wrap.appendChild(document.createTextNode('sources:'));
+    sources.forEach((s, i) => {
+      let host = s.url || '';
+      try { host = new URL(s.url).hostname.replace(/^www\./, ''); } catch (e) { /* keep raw */ }
+      const a = el('a', 'src-link', '[' + (i + 1) + '] ' + host);
+      a.href = s.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      if (s.title) a.title = s.title;
+      wrap.appendChild(a);
+    });
+    return wrap;
+  }
 
   function ts() {
     return new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -224,6 +284,7 @@ window.Chat = (() => {
     const started = performance.now();
     abortController = new AbortController();
     setStreaming(true);
+    openChips = [];
     let accumulated = '';
     let reasoningAccumulated = '';
     let firstTokenAt = null;
@@ -261,6 +322,22 @@ window.Chat = (() => {
             stream.reasoning.classList.remove('hidden');
             stream.reasoning.textContent = reasoningAccumulated;
             maybeScroll(was);
+          } else if (payload.tool) {
+            stream.thinking.classList.add('hidden');
+            if (payload.tool.status === 'running') {
+              try {
+                JSON.parse(accumulated.trim());
+                accumulated = '';
+                stream.body.textContent = '';
+              } catch (e) { /* ordinary streamed text, keep it */ }
+              toolRunning(stream, payload.tool);
+            } else {
+              toolDone(payload.tool);
+            }
+            maybeScroll(was);
+          } else if (payload.tool_limit) {
+            sysLine(stream, payload.tool_limit);
+            maybeScroll(was);
           } else if (payload.error === 'no_provider' || payload.error === 'no_model' || payload.error === 'provider_down' || payload.error === 'bad_key' || payload.error === 'no_credits' || payload.error === 'rate_limited') {
             stream.line.remove();
             gateBubble(payload);
@@ -297,6 +374,9 @@ window.Chat = (() => {
             const meta = el('div', 'log-meta', bits.join(' · '));
             if (payload.cloud) meta.appendChild(el('span', 'log-cloud', ' ☁'));
             const contentEl = stream.line.querySelector('.log-content');
+            if (payload.sources && payload.sources.length) {
+              contentEl.appendChild(sourcesBlock(payload.sources));
+            }
             contentEl.appendChild(meta);
             const stats = [];
             if (payload.usage) {
