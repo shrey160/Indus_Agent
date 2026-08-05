@@ -1,14 +1,12 @@
+import logging
+
 import db
+from memory import retriever, soul
+from memory.budget import approx_tokens, budget_breakdown, trim_history
 
-HISTORY_LIMIT = 20
+logger = logging.getLogger(__name__)
 
-
-def soul_block() -> str | None:
-    return None
-
-
-def memory_block() -> str | None:
-    return None
+HISTORY_FETCH_LIMIT = 60
 
 
 async def build_messages(conversation_id: int) -> list[dict]:
@@ -20,13 +18,30 @@ async def build_messages(conversation_id: int) -> list[dict]:
         LIMIT $2
         """,
         conversation_id,
-        HISTORY_LIMIT,
+        HISTORY_FETCH_LIMIT,
     )
+    rows = list(reversed(rows))
+
+    current_user = rows[-1]["content"] if rows and rows[-1]["role"] == "user" else ""
+
+    system_parts: list[str] = []
+    persona = soul.soul_block()
+    if persona:
+        system_parts.append(persona)
+    memory = await retriever.memory_block(current_user)
+    if memory:
+        system_parts.append(memory)
+
     messages: list[dict] = []
-    system_parts = [block for block in (soul_block(), memory_block()) if block]
     if system_parts:
         messages.append({"role": "system", "content": "\n\n".join(system_parts)})
-    messages.extend(
-        {"role": row["role"], "content": row["content"]} for row in reversed(rows)
-    )
+
+    system_tok = approx_tokens("\n\n".join(system_parts))
+    user_tok = approx_tokens(current_user)
+    breakdown = budget_breakdown(system_tok, user_tok)
+    logger.debug("budget breakdown: %s", breakdown)
+
+    history = [{"role": r["role"], "content": r["content"]} for r in rows]
+    trimmed = trim_history(history, breakdown["history_budget"])
+    messages.extend(trimmed)
     return messages

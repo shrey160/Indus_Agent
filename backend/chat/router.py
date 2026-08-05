@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import db
+from memory import extractor
 from providers import registry
 from providers.base import ProviderHTTPError, fmt_err
 from . import context
@@ -14,6 +15,15 @@ from . import context
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+
+def schedule_extraction(user_text: str, assistant_text: str, message_id: int | None) -> None:
+    try:
+        asyncio.create_task(
+            extractor.extract_later(user_text, assistant_text, message_id)
+        )
+    except Exception:
+        logger.warning("failed to schedule memory extraction", exc_info=True)
 
 
 class ChatRequest(BaseModel):
@@ -106,16 +116,18 @@ async def chat(body: ChatRequest):
         except asyncio.CancelledError:
             if full:
                 cost = registry.cost_for(provider_row["id"], model, usage)
-                await db.execute(
+                message_id = await db.fetchval(
                     """
                     INSERT INTO messages (conversation_id, role, content, model, cost_usd)
                     VALUES ($1, 'assistant', $2, $3, $4)
+                    RETURNING id
                     """,
                     conversation_id,
                     full,
                     model,
                     cost,
                 )
+                schedule_extraction(body.message, full, message_id)
             raise
         except ProviderHTTPError as exc:
             code = {401: "bad_key", 402: "no_credits", 429: "rate_limited"}.get(
@@ -148,6 +160,7 @@ async def chat(body: ChatRequest):
                 model,
                 cost,
             )
+            schedule_extraction(body.message, full, message_id)
             yield sse(
                 {
                     "done": True,

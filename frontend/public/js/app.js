@@ -3,7 +3,10 @@
 
   const FN_MAP = [
     { key: 'F1', label: 'HELP', action: showHelp },
-    { key: 'F2', label: 'PROVIDERS', action: () => window.Sidebar.toggle() },
+    { key: 'F2', label: 'PROVIDERS', action: () => {
+        window.Sidebar.openSection('providers');
+        window.Sidebar.open();
+      } },
     { key: 'F4', label: 'NEW CHAT', action: () => window.Chat.newChat() },
     { key: 'F5', label: 'RE-DETECT', action: () => window.Providers && window.Providers.redetect() },
     { key: 'F10', label: 'SEARCH', action: () => window.Chat.toggleSearch() },

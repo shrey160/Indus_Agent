@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 import db
 from chat.router import router as chat_router
+from memory.router import router as memory_router
 from providers.router import router as providers_router
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
@@ -54,6 +55,7 @@ app.add_middleware(
 
 app.include_router(providers_router)
 app.include_router(chat_router)
+app.include_router(memory_router)
 
 
 @app.get("/health")
@@ -63,7 +65,7 @@ async def health():
 
 @app.get("/api/info")
 async def info():
-    return {"name": "local-ai-hub", "phase": 2, "db": await db.check()}
+    return {"name": "local-ai-hub", "phase": 3, "db": await db.check()}
 
 
 class EchoIn(BaseModel):

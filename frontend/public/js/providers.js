@@ -461,6 +461,18 @@
   }
 
   let lastLoad = null;
+  let lastProviders = null;
+
+  function providerSummary() {
+    if (!lastProviders) return 'CHECKING…';
+    const up = lastProviders.filter((p) => p.status && p.status.state === 'up').length;
+    const warn = lastProviders.filter((p) => p.status && ['up_empty', 'unreachable'].includes(p.status.state)).length;
+    const down = lastProviders.filter((p) => p.status && ['down', 'bad_key', 'no_credits'].includes(p.status.state)).length;
+    const bits = [up + ' UP'];
+    if (warn) bits.push(warn + ' DEGRADED');
+    if (down) bits.push(down + ' DOWN');
+    return bits.join(' · ');
+  }
 
   async function render(root) {
     root.textContent = '';
@@ -489,6 +501,8 @@
       try {
         const providers = await api(force ? '/api/providers/detect' : '/api/providers',
           force ? { method: 'POST' } : undefined);
+        lastProviders = providers;
+        window.Sidebar.refreshSummary('providers');
         listEl.textContent = '';
         const local = providers.filter((p) => p.kind !== 'cloud');
         const cloud = providers.filter((p) => p.kind === 'cloud');
@@ -514,11 +528,18 @@
 
   window.Providers = {
     redetect: () => {
+      window.Sidebar.openSection('providers');
       if (lastLoad) lastLoad();
       window.Sidebar.open();
     },
     editKey: editKeyModal,
   };
 
-  Sidebar.registerSection({ id: 'providers', title: 'Providers', render });
+  Sidebar.registerSection({
+    id: 'providers',
+    title: 'Providers',
+    render,
+    summary: providerSummary,
+    action: { label: '↻', title: 'Re-detect providers', run: () => { window.Sidebar.openSection('providers'); if (lastLoad) lastLoad(); } },
+  });
 })();

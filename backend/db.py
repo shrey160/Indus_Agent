@@ -5,7 +5,37 @@ import asyncpg
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
+
+def _encode_vec(values):
+    if values is None:
+        return None
+    return "[" + ",".join(str(float(x)) for x in values) + "]"
+
+
+def _decode_vec(text):
+    if not text:
+        return None
+    if text.startswith("[") and text.endswith("]"):
+        inner = text[1:-1].strip()
+        if not inner:
+            return []
+        return [float(x) for x in inner.split(",")]
+    return None
+
+
+async def _init_conn(conn: asyncpg.Connection) -> None:
+    await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    await conn.set_type_codec(
+        "vector",
+        encoder=_encode_vec,
+        decoder=_decode_vec,
+        schema="public",
+        format="text",
+    )
+
+
 DDL: list[str] = [
+    "CREATE EXTENSION IF NOT EXISTS vector",
     """
     CREATE TABLE IF NOT EXISTS providers (
         id SERIAL PRIMARY KEY,
@@ -53,6 +83,18 @@ DDL: list[str] = [
         PRIMARY KEY (provider_id, model_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS memories (
+        id SERIAL PRIMARY KEY,
+        fact TEXT NOT NULL,
+        category TEXT DEFAULT 'general',
+        embedding vector(768),
+        embed_model TEXT,
+        confidence REAL DEFAULT 1.0,
+        source_msg_id INT REFERENCES messages(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT now()
+    )
+    """,
 ]
 
 DEFAULT_PROVIDERS = [
@@ -68,7 +110,7 @@ async def init_pool() -> asyncpg.Pool:
     last_exc: Exception | None = None
     for _ in range(10):
         try:
-            _pool = await asyncpg.create_pool(DATABASE_URL)
+            _pool = await asyncpg.create_pool(DATABASE_URL, init=_init_conn)
             return _pool
         except Exception as exc:
             last_exc = exc
