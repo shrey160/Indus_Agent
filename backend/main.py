@@ -10,7 +10,9 @@ from pydantic import BaseModel
 import db
 from chat.router import router as chat_router
 from memory.router import router as memory_router
+from mcp_client import manager as mcp_manager
 from providers.router import router as providers_router
+from tools import router as tools_router
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 
@@ -40,7 +42,9 @@ async def lifespan(app: FastAPI):
     await db.init_pool()
     await db.run_ddl()
     await db.seed()
+    await mcp_manager.start()
     yield
+    await mcp_manager.stop()
     await db.close_pool()
 
 
@@ -56,6 +60,7 @@ app.add_middleware(
 app.include_router(providers_router)
 app.include_router(chat_router)
 app.include_router(memory_router)
+app.include_router(tools_router)
 
 
 @app.get("/health")

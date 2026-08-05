@@ -95,6 +95,12 @@ DDL: list[str] = [
         created_at TIMESTAMPTZ DEFAULT now()
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS tool_settings (
+        tool_name TEXT PRIMARY KEY,
+        enabled BOOLEAN DEFAULT TRUE
+    )
+    """,
 ]
 
 DEFAULT_PROVIDERS = [

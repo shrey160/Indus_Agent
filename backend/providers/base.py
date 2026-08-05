@@ -113,42 +113,108 @@ class ProviderBase(ABC):
     async def models(self) -> list[ModelInfo]: ...
 
     async def stream_chat(
-        self, model: str, messages: list[dict]
+        self,
+        model: str,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        tool_choice: str | None = None,
     ) -> AsyncIterator[dict]:
+        body: dict = {"model": model, "messages": messages, "stream": True}
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = tool_choice or "auto"
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             async with client.stream(
                 "POST",
                 self._chat_path(),
                 headers=self._auth_headers(),
-                json={"model": model, "messages": messages, "stream": True},
+                json=body,
             ) as response:
                 if response.status_code >= 400:
                     raise ProviderHTTPError(
                         response.status_code, fmt_err(await _body_peek(response))
                     )
+                pending_tool_calls: dict[int, dict] = {}
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
                     payload = line[5:].strip()
                     if payload == "[DONE]":
-                        return
+                        break
                     try:
                         chunk = json.loads(payload)
                     except json.JSONDecodeError:
                         continue
                     usage = chunk.get("usage")
-                    if usage and (usage.get("prompt_tokens") is not None or usage.get("completion_tokens") is not None):
+                    if usage and (
+                        usage.get("prompt_tokens") is not None
+                        or usage.get("completion_tokens") is not None
+                    ):
                         yield {"type": "usage", "usage": usage}
                     choices = chunk.get("choices") or []
                     if not choices:
                         continue
-                    delta = choices[0].get("delta") or {}
+                    choice = choices[0]
+                    delta = choice.get("delta") or {}
                     reasoning = delta.get("reasoning") or delta.get("reasoning_content")
                     if reasoning:
                         yield {"type": "reasoning", "text": reasoning}
                     content = delta.get("content")
                     if content:
                         yield {"type": "content", "text": content}
+                    for tc in delta.get("tool_calls") or []:
+                        idx = tc.get("index", 0)
+                        entry = pending_tool_calls.setdefault(idx, {})
+                        if tc.get("id"):
+                            entry["id"] = tc["id"]
+                        func = tc.get("function") or {}
+                        if func.get("name"):
+                            entry["name"] = func["name"]
+                        if func.get("arguments"):
+                            entry["arguments"] = entry.get("arguments", "") + func[
+                                "arguments"
+                            ]
+                    finish_reason = choice.get("finish_reason")
+                    if finish_reason == "tool_calls" or pending_tool_calls:
+                        # Emit once the arguments look complete (tool_calls finished or stream ended).
+                        calls = []
+                        for idx in sorted(pending_tool_calls.keys()):
+                            entry = pending_tool_calls[idx]
+                            arguments = entry.get("arguments", "")
+                            try:
+                                parsed = json.loads(arguments) if arguments else {}
+                            except json.JSONDecodeError:
+                                parsed = {}
+                            calls.append(
+                                {
+                                    "id": entry.get("id", f"tool_{idx}"),
+                                    "name": entry.get("name", ""),
+                                    "arguments": parsed,
+                                }
+                            )
+                        if calls and (finish_reason == "tool_calls" or not content):
+                            yield {"type": "tool_calls", "calls": calls}
+                            pending_tool_calls = {}
+                            if finish_reason == "tool_calls":
+                                return
+                if pending_tool_calls:
+                    calls = []
+                    for idx in sorted(pending_tool_calls.keys()):
+                        entry = pending_tool_calls[idx]
+                        arguments = entry.get("arguments", "")
+                        try:
+                            parsed = json.loads(arguments) if arguments else {}
+                        except json.JSONDecodeError:
+                            parsed = {}
+                        calls.append(
+                            {
+                                "id": entry.get("id", f"tool_{idx}"),
+                                "name": entry.get("name", ""),
+                                "arguments": parsed,
+                            }
+                        )
+                    if calls:
+                        yield {"type": "tool_calls", "calls": calls}
 
     async def is_loaded(self, model: str) -> bool:
         return False

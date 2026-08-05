@@ -2,6 +2,8 @@ services:
   api:
     volumes: [./backend:/app]
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+  toolbox:
+    ports: ["127.0.0.1:9000:9000"]
   frontend:
     volumes: [./frontend:/app]
     command: node --watch server.js
