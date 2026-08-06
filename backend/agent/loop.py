@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ITERATIONS = 4
 TOOL_TIMEOUT_S = 30.0
 
+CITE_INSTRUCTION = "Cite sources using [n] when using <context> or rag.search results."
+
 USAGE_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens")
 
 
@@ -111,6 +113,14 @@ async def run(
             convo[0] = {**convo[0], "content": convo[0]["content"] + "\n\n" + instructions}
         else:
             convo.insert(0, {"role": "system", "content": instructions})
+
+    if any(t.get("name") == "rag.search" for t in tools):
+        if convo and convo[0].get("role") == "system":
+            content = convo[0].get("content") or ""
+            if CITE_INSTRUCTION not in content:
+                convo[0] = {**convo[0], "content": content + "\n\n" + CITE_INSTRUCTION}
+        else:
+            convo.insert(0, {"role": "system", "content": CITE_INSTRUCTION})
 
     total_usage: dict | None = None
     sources: list[dict] = []
@@ -213,6 +223,17 @@ async def run(
                     if url and url not in seen_urls:
                         seen_urls.add(url)
                         sources.append({"title": r.get("title"), "url": url})
+            elif name == "rag.search" and isinstance(result, dict):
+                for r in result.get("results") or []:
+                    sources.append(
+                        {
+                            "kind": "rag",
+                            "doc": r.get("doc"),
+                            "chunk_id": r.get("chunk_id"),
+                            "snippet": r.get("snippet"),
+                            "score": r.get("score"),
+                        }
+                    )
             yield {
                 "type": "tool",
                 "tool": {

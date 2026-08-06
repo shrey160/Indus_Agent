@@ -97,7 +97,7 @@ async def chat(body: ChatRequest):
         conversation_id,
         body.message,
     )
-    messages = await context.build_messages(conversation_id)
+    messages, auto_sources = await context.build_messages(conversation_id)
     provider = registry.build_provider(provider_row)
 
     async def stream():
@@ -124,7 +124,7 @@ async def chat(body: ChatRequest):
                     yield sse({"tool_limit": event["detail"]})
                 elif etype == "final":
                     final_text = event["text"]
-                    sources = event["sources"]
+                    sources = auto_sources + event["sources"]
             cost = registry.cost_for(provider_row["id"], model, usage)
         except asyncio.CancelledError:
             if full:

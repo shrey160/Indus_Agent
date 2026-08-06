@@ -3,13 +3,16 @@ import logging
 import db
 from memory import retriever, soul
 from memory.budget import approx_tokens, budget_breakdown, trim_history
+from rag import retriever as rag_retriever
 
 logger = logging.getLogger(__name__)
 
 HISTORY_FETCH_LIMIT = 60
 
+CITE_INSTRUCTION = "Cite sources using [n] when using <context> or rag.search results."
 
-async def build_messages(conversation_id: int) -> list[dict]:
+
+async def build_messages(conversation_id: int) -> tuple[list[dict], list[dict]]:
     rows = await db.fetch(
         """
         SELECT role, content FROM messages
@@ -32,6 +35,22 @@ async def build_messages(conversation_id: int) -> list[dict]:
     if memory:
         system_parts.append(memory)
 
+    rag_sources: list[dict] = []
+    rag_auto = await db.fetchval("SELECT rag_auto FROM app_state WHERE id = TRUE")
+    docs_ready = await db.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM documents WHERE status = 'ready')"
+    )
+    if rag_auto and docs_ready:
+        try:
+            block, rag_sources = await rag_retriever.rag_context(current_user)
+            if block:
+                system_parts.append(block)
+                joined = "\n\n".join(system_parts)
+                if CITE_INSTRUCTION not in joined:
+                    system_parts.append(CITE_INSTRUCTION)
+        except Exception:
+            logger.warning("failed to build rag context", exc_info=True)
+
     messages: list[dict] = []
     if system_parts:
         messages.append({"role": "system", "content": "\n\n".join(system_parts)})
@@ -44,4 +63,4 @@ async def build_messages(conversation_id: int) -> list[dict]:
     history = [{"role": r["role"], "content": r["content"]} for r in rows]
     trimmed = trim_history(history, breakdown["history_budget"])
     messages.extend(trimmed)
-    return messages
+    return messages, rag_sources
