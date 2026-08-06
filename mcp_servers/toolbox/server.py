@@ -2,6 +2,7 @@ import os
 
 from fastmcp import FastMCP
 
+from tools.rag import rag_ingest_text, rag_search
 from tools.util_datetime import get_datetime
 from tools.web_fetch import web_fetch
 from tools.web_search import web_search
@@ -25,6 +26,20 @@ async def web_fetch_tool(url: str, max_chars: int = 8000) -> dict:
 async def util_datetime_tool(timezone: str = "local") -> dict:
     """Current date/time. Always call before reasoning about 'latest/today/recent'."""
     return await get_datetime(timezone)
+
+
+@mcp.tool(name="rag.search")
+async def rag_search_tool(query: str, top_k: int = 5, min_score: float = 0.5) -> dict:
+    """Semantic search over the user's uploaded documents.
+    Returns {query, results: [{doc, chunk_id, snippet, score}], source: 'rag'}.
+    """
+    return await rag_search(query, top_k, min_score)
+
+
+@mcp.tool(name="rag.ingest")
+async def rag_ingest_tool(text: str, title: str) -> dict:
+    """Index an ad-hoc text note into the document store for later rag.search."""
+    return await rag_ingest_text(text, title)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,8 @@ KNOWN_TOOLS: dict[str, str] = {
     "web.search": "Search the web via local SearXNG. Returns {query, results: [{title, url, snippet}], source}.",
     "web.fetch": "Fetch a URL and return cleaned readable text. Returns {url, title, text, truncated, source}.",
     "util.datetime": "Current date/time. Always call before reasoning about 'latest/today/recent'.",
+    "rag.search": "Semantic search over the user's uploaded documents. Returns {query, results: [{doc, chunk_id, snippet, score}], source: 'rag'}.",
+    "rag.ingest": "Index an ad-hoc text note into the document store for later rag.search.",
 }
 
 

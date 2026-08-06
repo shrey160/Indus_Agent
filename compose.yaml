@@ -36,6 +36,14 @@ services:
     build: ./mcp_servers/toolbox
     environment:
       SEARXNG_URL: http://searxng:8080
+      DATABASE_URL: postgresql://localai:${DB_PASSWORD}@db:5432/localai
+      OLLAMA_URL: http://host.docker.internal:11434
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./data:/data
+    depends_on:
+      db:
+        condition: service_healthy
     networks: [appnet]
     healthcheck:
       test: ["CMD", "python", "/app/healthcheck.py"]
