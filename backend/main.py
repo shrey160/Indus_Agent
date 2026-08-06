@@ -12,6 +12,7 @@ from chat.router import router as chat_router
 from memory.router import router as memory_router
 from mcp_client import manager as mcp_manager
 from providers.router import router as providers_router
+from rag.router import router as rag_router
 from tools import router as tools_router
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
@@ -39,6 +40,7 @@ def ensure_soul_file() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_soul_file()
+    (DATA_DIR / "docs").mkdir(parents=True, exist_ok=True)
     await db.init_pool()
     await db.run_ddl()
     await db.seed()
@@ -60,6 +62,7 @@ app.add_middleware(
 app.include_router(providers_router)
 app.include_router(chat_router)
 app.include_router(memory_router)
+app.include_router(rag_router)
 app.include_router(tools_router)
 
 

@@ -101,6 +101,30 @@ DDL: list[str] = [
         enabled BOOLEAN DEFAULT TRUE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS documents (
+        id SERIAL PRIMARY KEY,
+        filename TEXT NOT NULL,
+        path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        error TEXT,
+        chunk_count INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT now()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chunks (
+        id BIGSERIAL PRIMARY KEY,
+        document_id INT REFERENCES documents(id) ON DELETE CASCADE,
+        idx INT NOT NULL,
+        content TEXT NOT NULL,
+        embedding vector(768),
+        embed_model TEXT NOT NULL,
+        UNIQUE(document_id, idx)
+    )
+    """,
+    "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS page INT",
+    "ALTER TABLE app_state ADD COLUMN IF NOT EXISTS rag_auto BOOLEAN NOT NULL DEFAULT TRUE",
 ]
 
 DEFAULT_PROVIDERS = [
