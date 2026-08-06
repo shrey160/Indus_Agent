@@ -51,10 +51,62 @@ window.Chat = (() => {
     messagesEl.insertBefore(line, stream.line);
   }
 
+  let activeCitePopover = null;
+
+  function closeCitePopover() {
+    if (activeCitePopover) {
+      activeCitePopover.remove();
+      activeCitePopover = null;
+    }
+  }
+
+  function citePopover(source, anchorRect) {
+    closeCitePopover();
+    const wrap = el('div', 'cite-popover');
+    const title = el('div', 'cite-popover-title', source.doc || source.title || 'source');
+    const snippet = el('div', 'cite-popover-snippet', source.snippet || source.url || '');
+    wrap.appendChild(title);
+    wrap.appendChild(snippet);
+    document.body.appendChild(wrap);
+    activeCitePopover = wrap;
+
+    const top = anchorRect.bottom + 6;
+    const left = Math.min(anchorRect.left, window.innerWidth - 316);
+    wrap.style.top = top + 'px';
+    wrap.style.left = Math.max(4, left) + 'px';
+
+    function onDocClick(ev) {
+      if (!wrap.contains(ev.target)) {
+        closeCitePopover();
+        document.removeEventListener('click', onDocClick);
+      }
+    }
+    function onEsc(ev) {
+      if (ev.key === 'Escape') {
+        closeCitePopover();
+        document.removeEventListener('keydown', onEsc);
+      }
+    }
+    setTimeout(() => {
+      document.addEventListener('click', onDocClick);
+      document.addEventListener('keydown', onEsc);
+    }, 0);
+  }
+
   function sourcesBlock(sources) {
     const wrap = el('div', 'log-sources');
     wrap.appendChild(document.createTextNode('sources:'));
     sources.forEach((s, i) => {
+      const label = '[' + (i + 1) + '] ' + (s.doc || '');
+      if (s.kind === 'rag' || !s.url) {
+        const span = el('span', 'src-link src-rag', label);
+        span.title = s.doc || '';
+        span.addEventListener('click', (ev) => {
+          citePopover(s, ev.target.getBoundingClientRect());
+        });
+        wrap.appendChild(span);
+        return;
+      }
       let host = s.url || '';
       try { host = new URL(s.url).hostname.replace(/^www\./, ''); } catch (e) { /* keep raw */ }
       const a = el('a', 'src-link', '[' + (i + 1) + '] ' + host);
@@ -65,6 +117,38 @@ window.Chat = (() => {
       wrap.appendChild(a);
     });
     return wrap;
+  }
+
+  function linkifyCitations(bodyEl, sources) {
+    if (!bodyEl || !sources || !sources.length) return;
+    const regex = /(\[\d+\]|【\d+】)/g;
+    const walker = document.createTreeWalker(bodyEl, NodeFilter.SHOW_TEXT, null, false);
+    const nodes = [];
+    let n;
+    while ((n = walker.nextNode())) nodes.push(n);
+    for (const node of nodes) {
+      const text = node.textContent;
+      const parts = text.split(regex);
+      if (parts.length < 3) continue;
+      const parent = node.parentNode;
+      const frag = document.createDocumentFragment();
+      for (const part of parts) {
+        const m = part.match(/^\[(\d+)\]$/) || part.match(/^【(\d+)】$/);
+        if (m) {
+          const idx = parseInt(m[1], 10) - 1;
+          const sup = el('sup', 'cite', part);
+          if (idx >= 0 && idx < sources.length) {
+            sup.addEventListener('click', (ev) => {
+              citePopover(sources[idx], ev.target.getBoundingClientRect());
+            });
+          }
+          frag.appendChild(sup);
+        } else {
+          frag.appendChild(document.createTextNode(part));
+        }
+      }
+      parent.replaceChild(frag, node);
+    }
   }
 
   function ts() {
@@ -173,7 +257,7 @@ window.Chat = (() => {
     wrap.appendChild(el('div', 'empty-wordmark', 'LOCAL · AI · HUB'));
     wrap.appendChild(el('div', 'empty-hint', 'F2 — Connect a provider'));
     wrap.appendChild(el('div', 'empty-hint', 'F4 — New chat'));
-    wrap.appendChild(el('div', 'empty-hint', 'F1 — Shortcuts'));
+    wrap.appendChild(el('div', 'empty-hint', 'DROP A FILE TO INDEX'));
     messagesEl.appendChild(wrap);
   }
 
@@ -374,6 +458,7 @@ window.Chat = (() => {
             const meta = el('div', 'log-meta', bits.join(' · '));
             if (payload.cloud) meta.appendChild(el('span', 'log-cloud', ' ☁'));
             const contentEl = stream.line.querySelector('.log-content');
+            linkifyCitations(stream.body, payload.sources);
             if (payload.sources && payload.sources.length) {
               contentEl.appendChild(sourcesBlock(payload.sources));
             }

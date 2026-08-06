@@ -13,6 +13,11 @@
       } },
     { key: 'F4', label: 'NEW CHAT', action: () => window.Chat.newChat() },
     { key: 'F5', label: 'RE-DETECT', action: () => window.Providers && window.Providers.redetect() },
+    { key: 'F9', label: 'UPLOAD', action: () => {
+        window.Sidebar.openSection('documents');
+        window.Sidebar.open();
+        if (window.Rag && window.Rag.openUpload) window.Rag.openUpload();
+      } },
     { key: 'F10', label: 'SEARCH', action: () => window.Chat.toggleSearch() },
     { key: 'ESC', label: 'CLOSE', action: onEscape },
   ];
@@ -25,6 +30,7 @@
       ['F3', 'Tools sidebar'],
       ['F4', 'New chat'],
       ['F5', 'Re-detect providers'],
+      ['F9', 'Upload documents'],
       ['F10', 'Filter chat log'],
       ['ESC', 'Close modal / dropdown / search'],
       ['⏎', 'Send message'],

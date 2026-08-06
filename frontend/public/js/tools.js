@@ -19,7 +19,13 @@ window.Tools = (() => {
     const h = HEALTH[t.health] || HEALTH.degraded;
     const wrap = el('div', 'tool-health');
     wrap.appendChild(el('span', 'dot ' + h.dot));
-    wrap.appendChild(el('span', 'provider-state' + (t.health === 'degraded' ? ' state-warn' : ''), h.word + ' · ' + t.server));
+    const state = el('span', 'provider-state' + (t.health === 'degraded' ? ' state-warn' : ''), h.word + ' · ' + t.server);
+    wrap.appendChild(state);
+    if (t.name === 'rag.search' && window.Rag && window.Rag.stats) {
+      const s = window.Rag.stats();
+      const stats = el('span', 'tool-stats', ' · ' + s.docs + ' docs · ' + s.chunks + ' chunks');
+      wrap.appendChild(stats);
+    }
     return wrap;
   }
 

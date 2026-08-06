@@ -865,6 +865,14 @@
   margin-top: 0;
 }
 
+.tool-stats {
+  font-size: var(--fs-micro);
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-variant-numeric: tabular-nums;
+}
+
 .tool-field {
   display: flex;
   flex-direction: column;
@@ -909,6 +917,93 @@
   color: var(--red);
 }
 
+/* ── drag-drop highlight ── */
+.drop-highlight {
+  outline: 2px dashed var(--cyan);
+  outline-offset: -4px;
+  background: var(--bg-2);
+}
+
+/* ── documents panel ── */
+.docs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.docs-summary {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.doc-row {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--pad-panel);
+  margin-bottom: 6px;
+  font-size: var(--fs-small);
+}
+
+.doc-row:hover {
+  border-color: var(--border-strong);
+}
+
+.doc-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.doc-name {
+  color: var(--text-0);
+  word-break: break-all;
+}
+
+.doc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--text-2);
+  font-size: var(--fs-micro);
+  margin-top: 2px;
+}
+
+.doc-status {
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 700;
+}
+
+.doc-ready { color: var(--green); }
+.doc-failed { color: var(--red); }
+.doc-pending { color: var(--yellow); }
+
+.doc-chunks {
+  font-variant-numeric: tabular-nums;
+}
+
+.doc-error {
+  color: var(--red);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 /* ── cited sources ── */
 .log-sources {
   font-size: var(--fs-small);
@@ -922,8 +1017,50 @@
 .src-link {
   color: var(--cyan);
   text-decoration: none;
+  cursor: pointer;
 }
 
 .src-link:hover {
   text-decoration: underline;
+}
+
+.src-link.src-rag {
+  color: var(--cyan);
+}
+
+.cite {
+  color: var(--cyan);
+  cursor: pointer;
+  font-size: .8em;
+  vertical-align: super;
+  line-height: 1;
+  margin: 0 1px;
+}
+
+.cite-popover {
+  position: fixed;
+  width: 300px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--pad-panel);
+  z-index: 90;
+  box-shadow: none;
+  font-size: var(--fs-small);
+  color: var(--text-0);
+}
+
+.cite-popover-title {
+  font-weight: 700;
+  color: var(--amber);
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+
+.cite-popover-snippet {
+  color: var(--text-1);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
 }
