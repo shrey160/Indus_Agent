@@ -97,7 +97,9 @@ async def delete_document(doc_id: int) -> dict:
         raise HTTPException(status_code=404, detail="document not found")
 
     await db.execute("DELETE FROM documents WHERE id = $1", doc_id)
-    Path(row["path"]).unlink(missing_ok=True)
+    path = row["path"]
+    if path:
+        Path(path).unlink(missing_ok=True)
     return {"ok": True}
 
 

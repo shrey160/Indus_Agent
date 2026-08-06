@@ -10,6 +10,7 @@ A self-hosted, local-first AI chat hub, fully Dockerized. It auto-detects local 
 - **Streaming chat** — token-by-token SSE streaming through the Node proxy (visible reasoning stream, stop-generation).
 - **Persistent history** — conversations and messages survive restarts in Postgres.
 - **Provider management UI** — detect / add / test / activate per provider and model, with live status dots and a searchable model picker.
+- **Document RAG** — upload PDF/MD/TXT files; they are chunked, embedded with Ollama `nomic-embed-text`, stored in pgvector, and cited automatically in replies.
 - **Zero-dependency frontend** — vanilla JS, no build step, Bloomberg-terminal-style UI with a keyboard-driven F-key bar.
 
 ## Architecture
@@ -44,7 +45,7 @@ Only `3000` and `8000` are published — and bound to `127.0.0.1` (localhost-onl
 - **Phase 2** — Cloud providers (OpenRouter) with Fernet-encrypted API keys, LOCAL/CLOUD sidebar split, searchable model picker.
 - **Phase 3** — Persona & memory: `soul.md` injection, async fact extraction, memory with token budget.
 - **Phase 4** — MCP toolbox + web tools (FastMCP streamable-HTTP server, self-hosted SearXNG).
-- **Phase 5** — RAG: upload → chunk → embed → pgvector; citations.
+- **Phase 5** — RAG: upload → chunk → embed → pgvector; citations. *(done)*
 - **Phase 6** — Management UI & polish: conversations/memory/soul/documents, export/import, hardening.
 - **Phase 7** — Advanced tracks (optional): sandbox, routing policies, local media, research feeds.
 
@@ -124,7 +125,20 @@ Containers reach LLM servers on the host via `host.docker.internal` (compose map
 3. Select a model in the searchable picker and **Activate** it. The first activation warms the model up — the first reply may be slow while it loads.
 4. Type a message in the chat input and send. Tokens stream live; use the stop button to cancel generation.
 
-Keyboard shortcuts: **F1** help, **F2** sidebar, **F4** new chat, **F5** re-detect providers, **F10** log filter, **ESC** dismiss.
+Keyboard shortcuts: **F1** help, **F2** sidebar, **F4** new chat, **F5** re-detect providers, **F9** upload documents, **F10** log filter, **ESC** dismiss.
+
+## Chat with your documents (RAG)
+
+Upload PDF, Markdown, or plain-text files and ask questions about them. The app chunks them, embeds them with the host Ollama (`nomic-embed-text`), stores vectors in Postgres, and injects relevant snippets into the system prompt. Replies cite their source; click the `[1]` superscript to see the file name and snippet.
+
+1. Open the **Documents** sidebar section or press **F9** to open the file picker.
+2. Drag a file onto the chat area, or click **UPLOAD** and select one or more files (≤ 50 MB, `.pdf` / `.md` / `.txt`).
+3. Wait for the status badge to change from `pending` → `processing` → `ready`. The UI polls in the background.
+4. Ask a question about the document. When the model uses the context, you will see a cyan `[1]` citation; clicking it opens a popover with the source file and excerpt.
+
+The `[ AUTO ]` toggle controls whether the assistant automatically retrieves context for every message. Even with auto-retrieval off, the model can still call the `rag.search` tool explicitly.
+
+Ad-hoc notes can be indexed without a file via the `rag.ingest` tool in the Tools section (`text` + `title`).
 
 ## Cloud providers (OpenRouter etc.)
 
@@ -176,6 +190,12 @@ The api service also receives `DATABASE_URL` and `DATA_DIR=/data` from compose (
 | `/api/chat` | POST | SSE stream — `{ "message", "conversation_id"? }` |
 | `/api/conversations` | GET / POST | List conversations / create empty one |
 | `/api/conversations/{id}/messages` | GET | Message history for a conversation |
+| `/api/documents` | POST | Multipart upload — returns `{ id, status: "pending" }` |
+| `/api/documents` | GET | List uploaded documents with status + chunk count |
+| `/api/documents/{id}` | GET | Document detail + first 3 chunk previews |
+| `/api/documents/{id}` | DELETE | Delete file + cascaded chunk vectors |
+| `/api/documents/{id}/reingest` | POST | Re-run the ingest pipeline |
+| `/api/rag/toggle_auto` | POST | Flip the automatic RAG retrieval flag |
 
 ## Project structure
 
@@ -188,6 +208,7 @@ local-ai-hub/
   data/                     # bind-mounted to api at /data
     soul.md                 # assistant persona (auto-created; gitignored)
     soul.example.md         # distributable persona template
+    docs/                   # uploaded documents (gitignored)
   backend/                  # FastAPI app (python:3.12-slim)
     main.py                 # app factory, routers, startup DDL
     db.py                   # asyncpg pool, schema bootstrap
@@ -257,3 +278,5 @@ curl -X POST localhost:8000/api/tools/web.search/test \
 | First reply is very slow | Normal — model is loading into memory. Keep it activated to avoid repeat warmups. |
 | Port already in use | Stop whatever occupies `3000`/`8000`, or change the mapping in `compose.yaml`. |
 | `docker compose config` fails | `docker compose v2` is required; `.env` must exist with all `${VAR}` references. |
+| Uploaded document stays `failed` | Ollama must be running and `nomic-embed-text` pulled; check `docker compose logs api`. The original file is kept on disk so you can reingest after fixing Ollama. |
+| Citation marker opens no popover | Citations are model-dependent; if the model did not emit `[n]`/`【n】`, the frontend has nothing to link. Try a model that follows instructions well (e.g., `gpt-4o-mini`). |
