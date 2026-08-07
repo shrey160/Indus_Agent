@@ -249,6 +249,8 @@ window.Documents = (() => {
     if (!root) return;
     await fetchDocs();
     renderBody();
+    window.Sidebar.refreshSummary('documents');
+    window.Sidebar.refreshSummary('tools');
     if (needsPoll()) startPolling();
   }
 

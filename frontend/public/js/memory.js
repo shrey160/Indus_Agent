@@ -264,8 +264,17 @@ window.Memory = (() => {
     }
 
     const r = el('div', 'fact-row');
+    const actions = el('div', 'fact-actions');
+    const editBtn = el('button', 'btn', '[ EDIT ]');
+    editBtn.addEventListener('click', () => { editingFactId = f.id; renderFacts(); });
+    const delBtn = el('button', 'btn', '[ DELETE ]');
+    delBtn.addEventListener('click', () => deleteFact(f.id));
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+
     const main = el('div', 'fact-main');
     const text = el('div', 'fact-text', f.fact);
+    text.title = f.fact;
     const metaParts = [];
     if (f.category) metaParts.push(f.category);
     if (f.confidence != null) metaParts.push('conf ' + Number(f.confidence).toFixed(1));
@@ -278,16 +287,8 @@ window.Memory = (() => {
     main.appendChild(text);
     main.appendChild(meta);
 
-    const actions = el('div', 'fact-actions');
-    const editBtn = el('button', 'btn', '[ EDIT ]');
-    editBtn.addEventListener('click', () => { editingFactId = f.id; renderFacts(); });
-    const delBtn = el('button', 'btn', '[ DELETE ]');
-    delBtn.addEventListener('click', () => deleteFact(f.id));
-    actions.appendChild(editBtn);
-    actions.appendChild(delBtn);
-
-    r.appendChild(main);
     r.appendChild(actions);
+    r.appendChild(main);
     return r;
   }
 
