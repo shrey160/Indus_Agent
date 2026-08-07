@@ -439,6 +439,7 @@ window.Chat = (() => {
             stream.thinking.classList.add('hidden');
             stream.cursor.remove();
             conversationId = payload.conversation_id;
+            document.dispatchEvent(new CustomEvent('hub:conversation'));
             const doneAt = performance.now();
             const secs = ((doneAt - started) / 1000).toFixed(1);
             const bits = [activeModelId || 'unknown', secs + 's'];
@@ -661,6 +662,36 @@ window.Chat = (() => {
   }
 
   /* ── history / new chat ── */
+  async function loadConversation(id) {
+    conversationId = id;
+    messagesEl.textContent = '';
+    try {
+      const res = await fetch(`/api/conversations/${id}/messages`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const msgs = await res.json();
+      if (msgs.length === 0) {
+        showEmpty();
+      } else {
+        for (const m of msgs) {
+          if (m.role === 'user') {
+            addLog('USER', 'role-user', m.content);
+          } else {
+            const content = addLog('HUB', 'role-hub', m.content);
+            if (m.model) {
+              content.appendChild(el('div', 'log-meta', m.model));
+            }
+          }
+        }
+        scrollBottom();
+      }
+      document.dispatchEvent(new CustomEvent('hub:conversation'));
+    } catch (err) {
+      messagesEl.textContent = '';
+      showEmpty();
+      window.UI.toast('LOAD CONVERSATION FAILED — ' + err.message, 'error');
+    }
+  }
+
   async function loadHistory() {
     try {
       const res = await fetch('/api/conversations');
@@ -669,24 +700,7 @@ window.Chat = (() => {
         showEmpty();
         return;
       }
-      conversationId = conversations[0].id;
-      const msgsRes = await fetch(`/api/conversations/${conversationId}/messages`);
-      const msgs = await msgsRes.json();
-      if (msgs.length === 0) {
-        showEmpty();
-        return;
-      }
-      for (const m of msgs) {
-        if (m.role === 'user') {
-          addLog('USER', 'role-user', m.content);
-        } else {
-          const content = addLog('HUB', 'role-hub', m.content);
-          if (m.model) {
-            content.appendChild(el('div', 'log-meta', m.model));
-          }
-        }
-      }
-      scrollBottom();
+      await loadConversation(conversations[0].id);
     } catch (err) {
       showEmpty();
     }
@@ -697,6 +711,7 @@ window.Chat = (() => {
     messagesEl.textContent = '';
     showEmpty();
     inputEl.focus();
+    document.dispatchEvent(new CustomEvent('hub:conversation'));
   }
 
   /* ── log search ── */
@@ -785,6 +800,8 @@ window.Chat = (() => {
     refreshBadge,
     activateModel,
     newChat,
+    loadConversation,
+    currentId: () => conversationId,
     toggleSearch,
     toast: (msg, kind) => window.UI.toast(msg, kind === 'error' ? 'error' : kind),
     isSearchOpen: () => !searchWrap.classList.contains('hidden'),

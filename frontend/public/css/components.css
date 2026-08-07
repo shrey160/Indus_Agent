@@ -1004,7 +1004,88 @@
   margin-top: 8px;
 }
 
-/* ── cited sources ── */
+/* ── conversations section ── */
+.conv-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-left: 2px solid transparent;
+  border-radius: var(--radius);
+  padding: var(--pad-panel);
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+
+.conv-row:hover {
+  border-color: var(--border-strong);
+}
+
+.conv-row.conv-active {
+  background: var(--amber-glow);
+  border-left-color: var(--amber);
+  border-color: var(--amber-dim);
+}
+
+.conv-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.conv-title {
+  color: var(--text-0);
+  font-size: var(--fs-body);
+  word-break: break-all;
+}
+
+.conv-meta {
+  color: var(--text-2);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.conv-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease);
+  flex: none;
+  align-self: flex-start;
+}
+
+.conv-row:hover .conv-actions,
+.conv-row:focus-within .conv-actions {
+  opacity: 1;
+}
+
+.conv-actions .btn {
+  padding: 2px 6px;
+  font-size: var(--fs-micro);
+}
+
+.conv-rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-0);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-family: var(--mono);
+  font-size: var(--fs-body);
+  padding: 2px 6px;
+}
+
+.conv-rename-input:focus {
+  background: var(--amber-glow);
+  outline: none;
+}
+
 .log-sources {
   font-size: var(--fs-small);
   color: var(--text-2);
@@ -1064,3 +1145,153 @@
   max-height: 160px;
   overflow-y: auto;
 }
+
+/* ── memory section ── */
+.memory-facts-block,
+.memory-soul-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memory-divider {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--text-2);
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.memory-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.filter-input,
+.filter-select {
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  padding: var(--pad-cell);
+}
+
+.filter-input:focus,
+.filter-select:focus {
+  border-color: var(--amber);
+  background: var(--amber-glow);
+  outline: none;
+}
+
+.filter-input {
+  flex: 1;
+  min-width: 80px;
+}
+
+.fact-row {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--pad-panel);
+  margin-bottom: 6px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+.fact-row:hover {
+  border-color: var(--border-strong);
+}
+
+.fact-row-edit {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fact-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fact-text {
+  color: var(--text-0);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fact-meta {
+  color: var(--text-2);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.fact-badge-edited {
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.fact-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+  align-self: flex-start;
+}
+
+.fact-actions .btn,
+.fact-row-edit .fact-actions .btn {
+  padding: 2px 6px;
+  font-size: var(--fs-micro);
+}
+
+.fact-edit-area {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-0);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-family: var(--mono);
+  font-size: var(--fs-body);
+  padding: 6px;
+  min-height: 80px;
+  resize: vertical;
+}
+
+.fact-edit-area:focus {
+  background: var(--amber-glow);
+  outline: none;
+}
+
+.modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-0);
+  font-family: var(--mono);
+  font-size: var(--fs-body);
+  padding: var(--pad-cell);
+  margin-bottom: 10px;
+}
+
+.modal-input:focus {
+  border-color: var(--amber);
+  background: var(--amber-glow);
+  outline: none;
+}
+
