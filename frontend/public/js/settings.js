@@ -3,6 +3,7 @@ window.Settings = (() => {
   let root = null;
   let includeKeys = false;
   let importFile = null;
+  let retentionMonths = null;
 
   function summary() {
     return '';
@@ -141,6 +142,138 @@ window.Settings = (() => {
     return block;
   }
 
+  async function loadRetention() {
+    try {
+      const res = await fetch('/api/settings/retention');
+      if (res.ok) {
+        const data = await res.json();
+        retentionMonths = data.retention_months == null ? null : data.retention_months;
+      }
+    } catch (err) { /* keep stale value */ }
+  }
+
+  async function saveRetention(input) {
+    const raw = input.value.trim();
+    let months = null;
+    if (raw !== '') {
+      months = Number(raw);
+      if (!Number.isInteger(months) || months < 1 || months > 120) {
+        toast('RETENTION MUST BE 1-120 MONTHS OR EMPTY (OFF)', 'error');
+        input.value = retentionMonths == null ? '' : String(retentionMonths);
+        return;
+      }
+    }
+    const res = await fetch('/api/settings/retention', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ retention_months: months }),
+    });
+    let out = {};
+    try { out = await res.json(); } catch (e) { /* keep */ }
+    if (!res.ok) {
+      toast('RETENTION SAVE FAILED — ' + (out.detail || 'HTTP ' + res.status), 'error');
+      input.value = retentionMonths == null ? '' : String(retentionMonths);
+      return;
+    }
+    retentionMonths = out.retention_months;
+    input.value = retentionMonths == null ? '' : String(retentionMonths);
+    toast(retentionMonths == null ? 'RETENTION OFF' : 'RETENTION ' + retentionMonths + ' MONTHS', 'ok');
+  }
+
+  async function doArchive(btn) {
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/retention/archive', { method: 'POST' });
+      let out = {};
+      try { out = await res.json(); } catch (e) { /* keep */ }
+      if (!res.ok) throw new Error(out.detail || 'HTTP ' + res.status);
+      toast(out.archived > 0
+        ? 'ARCHIVED ' + out.archived + ' CHATS — ' + out.file
+        : 'NOTHING OLD ENOUGH TO ARCHIVE', 'ok');
+      document.dispatchEvent(new CustomEvent('hub:conversation'));
+    } catch (err) {
+      toast('ARCHIVE FAILED — ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function confirmArchive() {
+    if (retentionMonths == null) {
+      const btn = root && root.querySelector('.settings-archive-btn');
+      if (btn) doArchive(btn);
+      return;
+    }
+    const body = el('div');
+    body.appendChild(el('p', 'modal-body-text',
+      'ARCHIVE CHATS OLDER THAN ' + retentionMonths + ' MONTHS.'));
+    body.appendChild(el('p', 'modal-body-text',
+      'ROWS ARE REMOVED FROM THE DB — JSON SAVED TO exports/.'));
+    const actions = el('div', 'modal-actions');
+    const cancel = el('button', 'btn', '[ CANCEL ]');
+    const go = el('button', 'btn btn-danger', '[ ARCHIVE ]');
+    actions.appendChild(cancel);
+    actions.appendChild(go);
+    body.appendChild(actions);
+    window.UI.openModal('ARCHIVE OLD CHATS', body);
+    cancel.addEventListener('click', () => window.UI.closeModal());
+    go.addEventListener('click', () => {
+      window.UI.closeModal();
+      const btn = root && root.querySelector('.settings-archive-btn');
+      if (btn) doArchive(btn);
+    });
+  }
+
+  async function doVacuum(btn) {
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/maintenance/vacuum', { method: 'POST' });
+      if (!res.ok) {
+        let out = {};
+        try { out = await res.json(); } catch (e) { /* keep */ }
+        throw new Error(out.detail || 'HTTP ' + res.status);
+      }
+      toast('VACUUM DONE', 'ok');
+    } catch (err) {
+      toast('VACUUM FAILED — ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function housekeepingBlock() {
+    const block = el('div');
+    block.appendChild(el('div', 'memory-divider', '── HOUSEKEEPING ──'));
+    const row = el('div', 'docs-toolbar');
+    row.appendChild(el('span', 'tool-desc', 'ARCHIVE CHATS OLDER THAN'));
+    const input = el('input', 'add-input settings-retention-input');
+    input.type = 'number';
+    input.min = '1';
+    input.max = '120';
+    input.placeholder = 'OFF';
+    input.style.width = '4.5rem';
+    input.value = retentionMonths == null ? '' : String(retentionMonths);
+    input.addEventListener('blur', () => saveRetention(input));
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') input.blur();
+    });
+    row.appendChild(input);
+    row.appendChild(el('span', 'tool-desc', 'MONTHS'));
+    block.appendChild(row);
+    const actions = el('div', 'provider-actions');
+    const saveBtn = el('button', 'btn', '[ SAVE ]');
+    saveBtn.addEventListener('click', () => saveRetention(input));
+    const archiveBtn = el('button', 'btn btn-danger settings-archive-btn', '[ ARCHIVE NOW ]');
+    archiveBtn.addEventListener('click', confirmArchive);
+    const vacuumBtn = el('button', 'btn', '[ VACUUM NOW ]');
+    vacuumBtn.addEventListener('click', () => doVacuum(vacuumBtn));
+    actions.appendChild(saveBtn);
+    actions.appendChild(archiveBtn);
+    actions.appendChild(vacuumBtn);
+    block.appendChild(actions);
+    return block;
+  }
+
   async function aboutBlock() {
     const block = el('div');
     block.appendChild(el('div', 'memory-divider', '── ABOUT ──'));
@@ -168,8 +301,10 @@ window.Settings = (() => {
     if (body) root = body;
     if (!root) return;
     root.textContent = '';
+    await loadRetention();
     root.appendChild(backupBlock());
     root.appendChild(restoreBlock());
+    root.appendChild(housekeepingBlock());
     root.appendChild(await aboutBlock());
   }
 

@@ -42,11 +42,11 @@ Only `3000` and `8000` are published — and bound to `127.0.0.1` (localhost-onl
 
 ## Roadmap
 
-- **Phase 2** — Cloud providers (OpenRouter) with Fernet-encrypted API keys, LOCAL/CLOUD sidebar split, searchable model picker.
-- **Phase 3** — Persona & memory: `soul.md` injection, async fact extraction, memory with token budget.
-- **Phase 4** — MCP toolbox + web tools (FastMCP streamable-HTTP server, self-hosted SearXNG).
+- **Phase 2** — Cloud providers (OpenRouter) with Fernet-encrypted API keys, LOCAL/CLOUD sidebar split, searchable model picker. *(done)*
+- **Phase 3** — Persona & memory: `soul.md` injection, async fact extraction, memory with token budget. *(done)*
+- **Phase 4** — MCP toolbox + web tools (FastMCP streamable-HTTP server, self-hosted SearXNG). *(done)*
 - **Phase 5** — RAG: upload → chunk → embed → pgvector; citations. *(done)*
-- **Phase 6** — Management UI & polish: conversations/memory/soul/documents, export/import, hardening.
+- **Phase 6** — Management UI & polish: conversations/memory/soul/documents, export/import, retention, hardening. *(done)*
 - **Phase 7** — Advanced tracks (optional): sandbox, routing policies, local media, research feeds.
 
 ## Prerequisites
@@ -125,7 +125,7 @@ Containers reach LLM servers on the host via `host.docker.internal` (compose map
 3. Select a model in the searchable picker and **Activate** it. The first activation warms the model up — the first reply may be slow while it loads.
 4. Type a message in the chat input and send. Tokens stream live; use the stop button to cancel generation.
 
-Keyboard shortcuts: **F1** help, **F2** sidebar, **F4** new chat, **F5** re-detect providers, **F9** upload documents, **F10** log filter, **ESC** dismiss.
+Keyboard shortcuts: **F1** help, **F2** sidebar, **F4** new chat, **F5** re-detect providers, **F9** upload documents, **F10** log filter, **F11** export / settings, **Ctrl/Cmd+K** model picker, **ESC** dismiss.
 
 ## Chat with your documents (RAG)
 
@@ -152,6 +152,31 @@ Beyond local models, you can add an API-key provider and use both from one picke
 4. The model dropdown splits into `── LOCAL ──` / `── CLOUD ──` groups. Free (`:free`) models get a `free` chip; `★` pins any model into a `── PINNED ──` group shown first. Cloud replies get a ☁ marker and a cost footnote (e.g. `~$0.0004`) when the provider reports token usage.
 
 Privacy: the first time a cloud model is activated, a one-time notice explains that messages leave your device. Cloud providers store keys encrypted with `SECRET_KEY` — keep `.env` backed up, because a different `SECRET_KEY` makes stored cloud keys undecryptable.
+
+## Backup & restore
+
+Everything worth keeping lives in two places: the `pgdata` volume (providers, conversations, memories, vectors) and `./data` (`soul.md`, uploaded documents). The app packages both.
+
+**Export** (Settings section → F11 → `[ EXPORT ]`, or `GET /api/export`):
+
+- Produces `local-ai-hub-export-<ts>.tar.gz` = a pg_dump custom-format `db.dump` (vectors included) + a full copy of `/data` (minus `exports/`). Nothing is stored server-side beyond temp-file cleanup.
+- **Include provider keys** toggle (default OFF, safer): with keys ON, the dump contains the Fernet-encrypted `providers` rows; with keys OFF, providers/favorites/app-state are stripped into a secret-free `providers.json` sidecar and re-imported without keys (live keys on the target are preserved).
+- **`.env` IS PART OF ANY MIGRATION.** With-keys exports only decrypt on the same `SECRET_KEY`. Restoring on a different `SECRET_KEY` makes provider keys unreadable — carry `.env` (or at least `SECRET_KEY` and `DB_PASSWORD`) alongside the backup. Keys-OFF exports survive a `SECRET_KEY` change but you'll re-enter cloud keys.
+
+**Import** (Settings → `[ PICK FILE ]` → `[ IMPORT ]`, or `POST /api/import?confirm=true`):
+
+- Requires the explicit confirm; archives are validated (tar-slip guard, 200 MB cap, must contain `db.dump`).
+- Before touching anything, the current state is snapshotted to `data/exports/pre-import-<ts>.tar.gz` (always with keys) — that file is your rollback.
+- During the restore, chat returns `503 restoring backup`; don't write to the app while it runs. Import replaces ALL data (pg_restore `--clean`) and overwrites `/data` files additively.
+- The response says `restart_required: true` — restart the stack (`docker compose restart api toolbox`) so DDL re-applies and services re-init.
+
+**Restore on a fresh machine:** clone → `cp .env.example .env` and fill in the **same** `SECRET_KEY` → `docker compose up --build -d` → import the export. Conversations, memories, providers (keys decrypt), and documents all come back.
+
+**Retention & housekeeping** (Settings → HOUSEKEEPING):
+
+- *Archive chats older than N months* (default OFF): `[ ARCHIVE NOW ]` exports matching conversations + messages to `data/exports/archive-<ts>.json` (readable JSON), then deletes them from the database.
+- `[ VACUUM NOW ]` runs `VACUUM ANALYZE` on the database.
+- Snapshots and archives accumulate in `data/exports/` — prune old ones manually.
 
 ## Development (live reload)
 
@@ -189,13 +214,26 @@ The api service also receives `DATABASE_URL` and `DATA_DIR=/data` from compose (
 | `/api/providers/{id}/activate` | POST | Activate a model (`{ "model": "..." }`), returns warmup info |
 | `/api/chat` | POST | SSE stream — `{ "message", "conversation_id"? }` |
 | `/api/conversations` | GET / POST | List conversations / create empty one |
+| `/api/conversations/{id}` | PATCH / DELETE | Rename / delete a conversation |
 | `/api/conversations/{id}/messages` | GET | Message history for a conversation |
+| `/api/memories` | GET | List memory facts (`?q=`, `?category=`) |
+| `/api/memories/{id}` | PUT / DELETE | Edit (marks `edited`) / delete a fact |
+| `/api/memories/forget_all` | POST | Purge all memory facts |
+| `/api/soul` | GET / PUT | Read / write the persona file (mtime tracked) |
 | `/api/documents` | POST | Multipart upload — returns `{ id, status: "pending" }` |
 | `/api/documents` | GET | List uploaded documents with status + chunk count |
 | `/api/documents/{id}` | GET | Document detail + first 3 chunk previews |
 | `/api/documents/{id}` | DELETE | Delete file + cascaded chunk vectors |
 | `/api/documents/{id}/reingest` | POST | Re-run the ingest pipeline |
 | `/api/rag/toggle_auto` | POST | Flip the automatic RAG retrieval flag |
+| `/api/export` | GET | Stream `export.tar.gz` (`?include_keys=true` to include encrypted keys) |
+| `/api/import` | POST | Restore from an export (`?confirm=true`, multipart `file`) |
+| `/api/settings/retention` | GET / PUT | Read / set chat retention in months (null = off) |
+| `/api/retention/archive` | POST | Archive + delete conversations older than the retention window |
+| `/api/maintenance/vacuum` | POST | `VACUUM ANALYZE` the database |
+| `/api/tools` | GET | List MCP tools with health + enabled state |
+| `/api/tools/{name}/toggle` | POST | Enable / disable a tool |
+| `/api/tools/{name}/test` | POST | Run a tool with `{ "args": {...} }` |
 
 ## Project structure
 
@@ -221,8 +259,9 @@ local-ai-hub/
 
 ## Data & persistence
 
-- **Postgres** — queryable data (providers, conversations, messages) lives in the `pgdata` Docker volume. Backup with `docker compose exec db pg_dump -U localai localai`.
-- **`./data`** — human-editable files (e.g. `soul.md`, the assistant persona). It is a bind mount, so it's a plain folder on your host; gitignored content is never committed.
+- **Postgres** — queryable data (providers, conversations, messages) lives in the `pgdata` Docker volume. Use the built-in export (above) for backups; raw `docker compose exec db pg_dump -U localai localai` works too.
+- **`./data`** — human-editable files (e.g. `soul.md`, the assistant persona). It is a bind mount, so it's a plain folder on your host; gitignored content is never committed. `data/exports/` holds import snapshots and retention archives.
+- All services run `restart: unless-stopped`; prod compose has no source bind mounts and no `--reload`/`--watch` (use `compose.dev.yaml` for development).
 
 ## Security & privacy
 

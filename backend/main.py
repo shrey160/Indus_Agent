@@ -14,6 +14,7 @@ from memory.router import router as memory_router
 from mcp_client import manager as mcp_manager
 from providers.router import router as providers_router
 from rag.router import router as rag_router
+from retention import router as retention_router
 from tools import router as tools_router
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
@@ -66,6 +67,7 @@ app.include_router(memory_router)
 app.include_router(rag_router)
 app.include_router(tools_router)
 app.include_router(backup_router)
+app.include_router(retention_router)
 
 
 @app.get("/health")
