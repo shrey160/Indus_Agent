@@ -147,10 +147,13 @@ window.Documents = (() => {
     const status = el('span', 'doc-status ' + statusClass(doc.status), statusWord(doc.status));
     if (doc.error) status.title = doc.error;
     meta.appendChild(status);
+    meta.appendChild(document.createTextNode(' · '));
     meta.appendChild(el('span', 'doc-chunks', (doc.chunk_count || 0) + ' chunks'));
+    meta.appendChild(document.createTextNode(' · '));
     meta.appendChild(el('span', 'doc-created', fmtTs(doc.created_at)));
     if (doc.error) {
-      const err = el('span', 'doc-error', '· ' + doc.error);
+      meta.appendChild(document.createTextNode(' · '));
+      const err = el('span', 'doc-error', doc.error);
       err.title = doc.error;
       meta.appendChild(err);
     }
