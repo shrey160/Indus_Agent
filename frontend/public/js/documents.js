@@ -289,6 +289,13 @@ window.Documents = (() => {
     initDragDrop();
   }
 
+  async function initSummary() {
+    await fetchDocs();
+    window.Sidebar.refreshSummary('documents');
+    window.Sidebar.refreshSummary('tools');
+    if (needsPoll()) startPolling();
+  }
+
   window.Sidebar.registerSection({
     id: 'documents',
     title: 'Documents',
@@ -298,6 +305,7 @@ window.Documents = (() => {
     },
     action: { label: '+', title: 'Upload document', run: openUpload },
     render,
+    init: initSummary,
   });
 
   return { stats, openUpload, uploadFile };

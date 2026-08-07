@@ -364,10 +364,15 @@ window.Memory = (() => {
     renderSoul();
   }
 
+  async function initSummary() {
+    await fetchFacts();
+  }
+
   window.Sidebar.registerSection({
     id: 'memory',
     title: 'Memory',
     summary,
     render,
+    init: initSummary,
   });
 })();

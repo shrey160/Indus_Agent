@@ -194,11 +194,27 @@ window.Conversations = (() => {
     }
   }
 
+  async function initSummary() {
+    try {
+      const res = await fetch('/api/conversations');
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
+      conversations = await res.json();
+    } catch (err) {
+      conversations = [];
+    }
+    window.Sidebar.refreshSummary('conversations');
+  }
+
   window.Sidebar.registerSection({
     id: 'conversations',
     title: 'Conversations',
     summary,
     render,
+    init: initSummary,
   });
 
   document.addEventListener('hub:conversation', () => refreshList());

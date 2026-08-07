@@ -248,11 +248,27 @@ window.Tools = (() => {
     for (const t of tools) root.appendChild(card(t));
   }
 
+  async function initSummary() {
+    try {
+      const res = await fetch('/api/tools');
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
+      tools = await res.json();
+    } catch (err) {
+      tools = [];
+    }
+    window.Sidebar.refreshSummary('tools');
+  }
+
   window.Sidebar.registerSection({
     id: 'tools',
     title: 'Tools',
     summary,
     action: { label: '↻', title: 'Refresh tools', run: () => render() },
     render,
+    init: initSummary,
   });
 })();

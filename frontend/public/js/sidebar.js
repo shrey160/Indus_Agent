@@ -171,6 +171,12 @@ window.Sidebar = (() => {
     });
     renderSections();
     applyState(localStorage.getItem('sidebarOpen') === '1');
+    for (const id of order) {
+      const def = defs.get(id);
+      if (def && typeof def.init === 'function') {
+        try { Promise.resolve(def.init()).catch((err) => console.error('sidebar init failed for', id, err)); } catch (err) { console.error('sidebar init failed for', id, err); }
+      }
+    }
   }
 
   return { init, open, close, toggle, isOpen, registerSection, openSection, refreshSummary };
