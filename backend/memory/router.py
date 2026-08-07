@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import db
-from . import extractor, soul
+from . import extractor, retriever, soul
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +19,14 @@ class ReextractRequest(BaseModel):
     conversation_id: int
 
 
+class MemoryPut(BaseModel):
+    fact: str
+
+
 @router.get("/soul")
 async def get_soul() -> dict:
-    return {"content": soul.get_soul()}
+    content = soul.get_soul()
+    return {"content": content, "mtime": soul.get_mtime()}
 
 
 @router.put("/soul")
@@ -43,7 +48,7 @@ async def list_memories(q: str | None = None, category: str | None = None) -> li
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     rows = await db.fetch(
         f"""
-        SELECT id, fact, category, confidence, source_msg_id, created_at
+        SELECT id, fact, category, confidence, edited, source_msg_id, created_at
         FROM memories
         {where}
         ORDER BY created_at DESC
@@ -60,6 +65,42 @@ async def delete_memory(memory_id: int) -> dict:
     if ok.startswith("DELETE 0"):
         raise HTTPException(status_code=404, detail="memory not found")
     return {"ok": True}
+
+
+@router.put("/memories/{memory_id}")
+async def update_memory(memory_id: int, body: MemoryPut) -> dict:
+    fact = body.fact.strip()
+    if not fact:
+        raise HTTPException(status_code=400, detail="fact cannot be empty")
+    existing = await db.fetchrow("SELECT id FROM memories WHERE id = $1", memory_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="memory not found")
+
+    embedding = await retriever.embed_text(fact)
+    if embedding is None:
+        await db.execute(
+            "UPDATE memories SET fact = $2, edited = TRUE WHERE id = $1",
+            memory_id,
+            fact,
+        )
+    else:
+        await db.execute(
+            """
+            UPDATE memories
+            SET fact = $2, edited = TRUE, embedding = $3, embed_model = $4
+            WHERE id = $1
+            """,
+            memory_id,
+            fact,
+            embedding,
+            retriever.EMBED_MODEL,
+        )
+
+    row = await db.fetchrow(
+        "SELECT id, fact, category, confidence, edited FROM memories WHERE id = $1",
+        memory_id,
+    )
+    return dict(row)
 
 
 @router.post("/memories/forget_all")

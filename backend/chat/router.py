@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -13,6 +13,7 @@ from mcp_client import manager as mcp_manager
 from providers import registry
 from providers.base import ProviderHTTPError, fmt_err
 from . import context
+from .titles import kickoff_title
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,10 @@ def schedule_extraction(user_text: str, assistant_text: str, message_id: int | N
 class ChatRequest(BaseModel):
     conversation_id: int | None = None
     message: str
+
+
+class PatchTitle(BaseModel):
+    title: str
 
 
 def sse(payload: dict) -> str:
@@ -80,8 +85,7 @@ async def chat(body: ChatRequest):
     conversation_id = body.conversation_id
     if conversation_id is None:
         conversation_id = await db.fetchval(
-            "INSERT INTO conversations (title) VALUES ($1) RETURNING id",
-            body.message[:60],
+            "INSERT INTO conversations DEFAULT VALUES RETURNING id"
         )
     else:
         exists = await db.fetchval(
@@ -89,8 +93,7 @@ async def chat(body: ChatRequest):
         )
         if not exists:
             conversation_id = await db.fetchval(
-                "INSERT INTO conversations (title) VALUES ($1) RETURNING id",
-                body.message[:60],
+                "INSERT INTO conversations DEFAULT VALUES RETURNING id"
             )
     await db.execute(
         "INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'user', $2)",
@@ -175,6 +178,12 @@ async def chat(body: ChatRequest):
                 cost,
             )
             schedule_extraction(body.message, reply, message_id)
+            msg_count = await db.fetchval(
+                "SELECT count(*) FROM messages WHERE conversation_id = $1",
+                conversation_id,
+            )
+            if msg_count == 2:
+                kickoff_title(conversation_id, body.message)
             yield sse(
                 {
                     "done": True,
@@ -209,9 +218,39 @@ async def chat(body: ChatRequest):
 @router.get("/conversations")
 async def list_conversations() -> list[dict]:
     rows = await db.fetch(
-        "SELECT id, title, created_at FROM conversations ORDER BY id DESC LIMIT 50"
+        """
+        SELECT c.id, c.title, c.created_at, count(m.id) AS message_count
+        FROM conversations c
+        LEFT JOIN messages m ON m.conversation_id = c.id
+        GROUP BY c.id
+        ORDER BY c.id DESC
+        LIMIT 50
+        """
     )
     return [dict(row) for row in rows]
+
+
+@router.patch("/conversations/{conversation_id}")
+async def rename_conversation(conversation_id: int, body: PatchTitle) -> dict:
+    title = body.title.strip()
+    if not title or len(title) > 120:
+        raise HTTPException(status_code=400, detail="title must be 1-120 characters")
+    ok = await db.execute(
+        "UPDATE conversations SET title = $2 WHERE id = $1",
+        conversation_id,
+        title,
+    )
+    if ok.startswith("UPDATE 0"):
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return {"id": conversation_id, "title": title}
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: int) -> dict:
+    ok = await db.execute("DELETE FROM conversations WHERE id = $1", conversation_id)
+    if ok.startswith("DELETE 0"):
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return {"ok": True}
 
 
 @router.get("/conversations/{conversation_id}/messages")

@@ -35,6 +35,10 @@ def set_soul(content: str) -> str:
     return content
 
 
+def get_mtime() -> float | None:
+    return _mtime
+
+
 def soul_block() -> str:
     content = get_soul()
     if not content.strip():
