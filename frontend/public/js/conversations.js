@@ -153,8 +153,8 @@ window.Conversations = (() => {
     actions.appendChild(rename);
     actions.appendChild(del);
 
-    r.appendChild(main);
     r.appendChild(actions);
+    r.appendChild(main);
     return r;
   }
 

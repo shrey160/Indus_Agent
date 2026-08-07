@@ -1007,8 +1007,8 @@
 /* ── conversations section ── */
 .conv-row {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-left: 2px solid transparent;
@@ -1034,13 +1034,14 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  flex: 1;
+  width: 100%;
 }
 
 .conv-title {
   color: var(--text-0);
   font-size: var(--fs-body);
   word-break: break-all;
+  width: 100%;
 }
 
 .conv-meta {
@@ -1055,8 +1056,7 @@
   gap: 4px;
   opacity: 0;
   transition: opacity var(--t-fast) var(--ease);
-  flex: none;
-  align-self: flex-start;
+  align-self: flex-end;
 }
 
 .conv-row:hover .conv-actions,
