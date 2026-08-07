@@ -5,6 +5,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends wget gnupg \
+ && echo "deb http://apt.postgresql.org/pub/repos/apt trixie-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+ && wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends postgresql-client-16 \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY . .
 
 RUN addgroup --system app && adduser --system --group app

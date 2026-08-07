@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 import db
 from agent import loop as agent_loop
+from backup import is_restoring
 from memory import extractor
 from mcp_client import manager as mcp_manager
 from providers import registry
@@ -68,6 +69,8 @@ async def resolve_active() -> tuple[dict | None, str | None, str | None, str | N
 
 @router.post("/chat")
 async def chat(body: ChatRequest):
+    if is_restoring():
+        raise HTTPException(503, "restoring backup")
     provider_row, model, gate_error, gate_detail = await resolve_active()
     if gate_error is not None:
         async def gated():

@@ -43,6 +43,9 @@ function proxyApi(req, res) {
     res.writeHead(upstream.status, {
       'content-type': upstream.headers.get('content-type') || 'application/octet-stream',
       'cache-control': 'no-cache',
+      ...(upstream.headers.get('content-disposition')
+        ? { 'content-disposition': upstream.headers.get('content-disposition') }
+        : {}),
     });
     if (upstream.body) {
       const stream = Readable.fromWeb(upstream.body);

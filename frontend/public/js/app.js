@@ -23,6 +23,10 @@
         if (window.Documents && window.Documents.openUpload) window.Documents.openUpload();
       } },
     { key: 'F10', label: 'SEARCH', action: () => window.Chat.toggleSearch() },
+    { key: 'F11', label: 'EXPORT', action: () => {
+        window.Sidebar.openSection('settings');
+        window.Sidebar.open();
+      } },
     { key: 'ESC', label: 'CLOSE', action: onEscape },
   ];
 
@@ -37,6 +41,7 @@
       ['F6', 'Memories sidebar'],
       ['F9', 'Upload documents'],
       ['F10', 'Filter chat log'],
+      ['F11', 'Export / settings'],
       ['Ctrl/⌘ K', 'Focus model picker'],
       ['ESC', 'Close modal / sidebar / search'],
       ['⏎', 'Send message'],

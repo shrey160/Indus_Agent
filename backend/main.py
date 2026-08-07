@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import db
+from backup import router as backup_router
 from chat.router import router as chat_router
 from memory.router import router as memory_router
 from mcp_client import manager as mcp_manager
@@ -64,6 +65,7 @@ app.include_router(chat_router)
 app.include_router(memory_router)
 app.include_router(rag_router)
 app.include_router(tools_router)
+app.include_router(backup_router)
 
 
 @app.get("/health")

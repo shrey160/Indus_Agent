@@ -379,6 +379,11 @@ window.Chat = (() => {
         body: JSON.stringify({ conversation_id: conversationId, message }),
         signal: abortController.signal,
       });
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
