@@ -166,7 +166,11 @@ window.Conversations = (() => {
 
     try {
       const res = await fetch('/api/conversations');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
       conversations = await res.json();
     } catch (err) {
       conversations = [];

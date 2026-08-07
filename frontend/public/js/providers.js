@@ -515,7 +515,12 @@
           for (const p of cloud) listEl.appendChild(providerCard(p, () => render(root)));
         }
         if (!local.length && !cloud.length) {
-          listEl.appendChild(el('div', 'provider-state', 'NO PROVIDERS — + ADD'));
+          const empty = el('div', 'provider-state');
+          empty.appendChild(document.createTextNode('NO PROVIDERS — '));
+          const add = el('button', 'btn', '[ + ADD ]');
+          add.addEventListener('click', () => addBtn.click());
+          empty.appendChild(add);
+          listEl.appendChild(empty);
         }
       } catch (err) {
         listEl.textContent = '';

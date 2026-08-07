@@ -811,5 +811,7 @@ window.Chat = (() => {
       applyFilter('');
     },
     closeDropdown: () => dropdown.classList.add('hidden'),
+    openModelPicker: () => openDropdown(),
+    isDropdownOpen: () => !dropdown.classList.contains('hidden'),
   };
 })();

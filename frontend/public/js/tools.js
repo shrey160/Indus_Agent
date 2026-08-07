@@ -21,8 +21,8 @@ window.Tools = (() => {
     wrap.appendChild(el('span', 'dot ' + h.dot));
     const state = el('span', 'provider-state' + (t.health === 'degraded' ? ' state-warn' : ''), h.word + ' · ' + t.server);
     wrap.appendChild(state);
-    if (t.name === 'rag.search' && window.Rag && window.Rag.stats) {
-      const s = window.Rag.stats();
+    if (t.name === 'rag.search' && window.Documents && window.Documents.stats) {
+      const s = window.Documents.stats();
       const stats = el('span', 'tool-stats', ' · ' + s.docs + ' docs · ' + s.chunks + ' chunks');
       wrap.appendChild(stats);
     }
@@ -37,10 +37,16 @@ window.Tools = (() => {
     btn.disabled = true;
     try {
       const res = await fetch('/api/tools/' + encodeURIComponent(t.name) + '/toggle', { method: 'POST' });
-      const out = await res.json();
+      let out = {};
+      try { out = await res.json(); } catch (e) { /* keep */ }
       if (!res.ok) throw new Error(out.detail || 'HTTP ' + res.status);
       t.enabled = out.enabled;
-      toast(t.name + (out.enabled ? ' ENABLED' : ' DISABLED'), 'ok');
+      const enabledCount = tools.filter((x) => x.enabled).length;
+      if (t.enabled && enabledCount > 10) {
+        toast('TOOL LIMIT — 10+ ENABLED BLOATS CONTEXT', 'warn');
+      } else {
+        toast(t.name + (out.enabled ? ' ENABLED' : ' DISABLED'), 'ok');
+      }
       await render();
     } catch (err) {
       toast('TOGGLE FAILED — ' + err.message, 'error');
@@ -150,7 +156,8 @@ window.Tools = (() => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ args }),
       });
-      const out = await res.json();
+      let out = {};
+      try { out = await res.json(); } catch (e) { /* keep */ }
       if (!res.ok) throw new Error(out.detail || 'HTTP ' + res.status);
       showResult(t, out, resultEl, footEl);
     } catch (err) {
@@ -213,7 +220,12 @@ window.Tools = (() => {
     root.appendChild(el('div', 'models-empty', 'CHECKING…'));
     try {
       const res = await fetch('/api/tools');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      let out = [];
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
       tools = await res.json();
     } catch (err) {
       tools = [];

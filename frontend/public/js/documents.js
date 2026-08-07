@@ -1,4 +1,4 @@
-window.Rag = (() => {
+window.Documents = (() => {
   const { el, toast, openModal, closeModal } = window.UI;
 
   const ALLOWED = new Set(['.pdf', '.md', '.txt']);
@@ -7,7 +7,6 @@ window.Rag = (() => {
   let pollTimer = null;
   let root = null;
   let chatRoot = null;
-  let popoverEl = null;
 
   function stats() {
     return {
@@ -19,10 +18,15 @@ window.Rag = (() => {
   async function fetchDocs() {
     try {
       const res = await fetch('/api/documents');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
       docs = await res.json();
     } catch (err) {
       docs = [];
+      toast('DOCUMENTS LOAD FAILED — ' + err.message, 'error');
     }
   }
 
@@ -61,9 +65,15 @@ window.Rag = (() => {
     return String(s).toUpperCase();
   }
 
+  function fmtTs(ts) {
+    if (!ts) return '';
+    try { return new Date(ts).toLocaleString('sv-SE'); }
+    catch (e) { return String(ts); }
+  }
+
   function confirmDelete(doc) {
     const body = el('div');
-    body.appendChild(el('p', '', 'Delete "' + doc.filename + '" and its indexed chunks?'));
+    body.appendChild(el('p', 'modal-body-text', 'Delete "' + doc.filename + '" and its indexed chunks?'));
     const actions = el('div', 'modal-actions');
     const cancel = el('button', 'btn', '[ CANCEL ]');
     const del = el('button', 'btn btn-danger', '[ DELETE ]');
@@ -82,7 +92,8 @@ window.Rag = (() => {
   async function doDelete(id) {
     try {
       const res = await fetch('/api/documents/' + encodeURIComponent(id), { method: 'DELETE' });
-      const out = await res.json();
+      let out = {};
+      try { out = await res.json(); } catch (e) { /* keep */ }
       if (!res.ok) throw new Error(out.detail || 'HTTP ' + res.status);
       await fetchDocs();
       if (root) renderBody();
@@ -97,7 +108,8 @@ window.Rag = (() => {
   async function doReingest(id) {
     try {
       const res = await fetch('/api/documents/' + encodeURIComponent(id) + '/reingest', { method: 'POST' });
-      const out = await res.json();
+      let out = {};
+      try { out = await res.json(); } catch (e) { /* keep */ }
       if (!res.ok) throw new Error(out.detail || 'HTTP ' + res.status);
       await fetchDocs();
       if (root) renderBody();
@@ -112,7 +124,8 @@ window.Rag = (() => {
     btn.disabled = true;
     try {
       const res = await fetch('/api/rag/toggle_auto', { method: 'POST' });
-      const out = await res.json();
+      let out = {};
+      try { out = await res.json(); } catch (e) { /* keep */ }
       if (!res.ok) throw new Error(out.detail || 'HTTP ' + res.status);
       autoState = out.rag_auto;
       if (root) renderBody();
@@ -124,33 +137,34 @@ window.Rag = (() => {
     }
   }
 
-  function docRow(doc) {
-    const row = el('div', 'doc-row');
-    const main = el('div', 'doc-main');
-    const name = el('span', 'doc-name', doc.filename);
-    main.appendChild(name);
+  function docCard(doc) {
+    const card = el('div', 'provider-card');
+    const head = el('div', 'provider-head');
+    head.appendChild(el('span', 'provider-name', doc.filename));
+    card.appendChild(head);
 
-    const meta = el('div', 'doc-meta');
+    const meta = el('div', 'provider-state');
     const status = el('span', 'doc-status ' + statusClass(doc.status), statusWord(doc.status));
+    if (doc.error) status.title = doc.error;
     meta.appendChild(status);
     meta.appendChild(el('span', 'doc-chunks', (doc.chunk_count || 0) + ' chunks'));
+    meta.appendChild(el('span', 'doc-created', fmtTs(doc.created_at)));
     if (doc.error) {
       const err = el('span', 'doc-error', '· ' + doc.error);
       err.title = doc.error;
       meta.appendChild(err);
     }
-    main.appendChild(meta);
-    row.appendChild(main);
+    card.appendChild(meta);
 
-    const actions = el('div', 'doc-actions');
+    const actions = el('div', 'provider-actions');
     const reBtn = el('button', 'btn', '[ REINGEST ]');
     reBtn.addEventListener('click', () => doReingest(doc.id));
     const delBtn = el('button', 'btn btn-danger', '[ DELETE ]');
     delBtn.addEventListener('click', () => confirmDelete(doc));
     actions.appendChild(reBtn);
     actions.appendChild(delBtn);
-    row.appendChild(actions);
-    return row;
+    card.appendChild(actions);
+    return card;
   }
 
   function autoLabel() {
@@ -169,7 +183,8 @@ window.Rag = (() => {
     data.append('file', file);
     try {
       const res = await fetch('/api/documents', { method: 'POST', body: data });
-      const out = await res.json();
+      let out = {};
+      try { out = await res.json(); } catch (e) { /* keep */ }
       if (!res.ok) throw new Error(out.detail || 'HTTP ' + res.status);
       toast('UPLOADED — ' + file.name, 'ok');
       await fetchDocs();
@@ -188,7 +203,7 @@ window.Rag = (() => {
   }
 
   function openUpload() {
-    const input = document.getElementById('rag-file-input');
+    const input = document.getElementById('doc-file-input');
     if (input) input.click();
   }
 
@@ -196,11 +211,11 @@ window.Rag = (() => {
     if (!root) return;
     root.textContent = '';
 
-    const header = el('div', 'docs-toolbar');
+    const toolbar = el('div', 'docs-toolbar');
     const uploadBtn = el('button', 'btn btn-primary', '[ UPLOAD ]');
     const fileInput = el('input');
     fileInput.type = 'file';
-    fileInput.id = 'rag-file-input';
+    fileInput.id = 'doc-file-input';
     fileInput.accept = '.pdf,.md,.txt';
     fileInput.multiple = true;
     fileInput.style.display = 'none';
@@ -209,28 +224,29 @@ window.Rag = (() => {
       uploadFiles(ev.target.files);
       ev.target.value = '';
     });
-    header.appendChild(uploadBtn);
-    header.appendChild(fileInput);
+    toolbar.appendChild(uploadBtn);
+    toolbar.appendChild(fileInput);
 
     const autoBtn = el('button', 'btn', autoLabel());
     autoBtn.title = 'Toggle auto-retrieval';
     autoBtn.addEventListener('click', () => toggleAuto(autoBtn));
-    header.appendChild(autoBtn);
+    toolbar.appendChild(autoBtn);
 
-    const summary = el('span', 'docs-summary', stats().docs + ' docs · ' + stats().chunks + ' chunks');
-    header.appendChild(summary);
-    root.appendChild(header);
+    const s = stats();
+    toolbar.appendChild(el('span', 'docs-summary', s.docs + ' docs · ' + s.chunks + ' chunks'));
+    root.appendChild(toolbar);
 
     if (!docs.length) {
-      root.appendChild(el('div', 'models-empty', 'NO DOCUMENTS — DROP A FILE'));
+      root.appendChild(el('div', 'models-empty', 'NO DOCUMENTS — DROP A FILE OR F9'));
       return;
     }
 
-    for (const doc of docs) root.appendChild(docRow(doc));
+    for (const doc of docs) root.appendChild(docCard(doc));
   }
 
   async function render(body) {
-    root = body;
+    if (body) root = body;
+    if (!root) return;
     await fetchDocs();
     renderBody();
     if (needsPoll()) startPolling();

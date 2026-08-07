@@ -20,7 +20,7 @@
     { key: 'F9', label: 'UPLOAD', action: () => {
         window.Sidebar.openSection('documents');
         window.Sidebar.open();
-        if (window.Rag && window.Rag.openUpload) window.Rag.openUpload();
+        if (window.Documents && window.Documents.openUpload) window.Documents.openUpload();
       } },
     { key: 'F10', label: 'SEARCH', action: () => window.Chat.toggleSearch() },
     { key: 'ESC', label: 'CLOSE', action: onEscape },
@@ -37,7 +37,8 @@
       ['F6', 'Memories sidebar'],
       ['F9', 'Upload documents'],
       ['F10', 'Filter chat log'],
-      ['ESC', 'Close modal / dropdown / search'],
+      ['Ctrl/⌘ K', 'Focus model picker'],
+      ['ESC', 'Close modal / sidebar / search'],
       ['⏎', 'Send message'],
       ['⇧⏎', 'Newline in composer'],
       ['■ STOP', 'Abort streaming reply'],
@@ -56,8 +57,10 @@
       window.UI.closeModal();
     } else if (window.Chat.isSearchOpen()) {
       window.Chat.closeSearch();
-    } else {
+    } else if (window.Chat.isDropdownOpen && window.Chat.isDropdownOpen()) {
       window.Chat.closeDropdown();
+    } else if (window.Sidebar.isOpen()) {
+      window.Sidebar.close();
     }
   }
 
@@ -76,6 +79,11 @@
     document.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape') {
         onEscape();
+        return;
+      }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+        ev.preventDefault();
+        if (window.Chat && window.Chat.openModelPicker) window.Chat.openModelPicker();
         return;
       }
       if (!/^F\d{1,2}$/.test(ev.key)) return;

@@ -43,7 +43,11 @@ window.Memory = (() => {
   async function fetchSoul() {
     try {
       const res = await fetch('/api/soul');
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
       const data = await res.json();
       const prev = soul.mtime;
       soul = { content: data.content || '', mtime: data.mtime };
@@ -63,7 +67,11 @@ window.Memory = (() => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ content: ta.value }),
       });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
       const data = await res.json();
       soul.content = data.content || ta.value;
       soul.mtime = data.mtime || soul.mtime;
@@ -135,7 +143,11 @@ window.Memory = (() => {
       if (searchQ) params.set('q', searchQ);
       if (filterCategory) params.set('category', filterCategory);
       const res = await fetch('/api/memories?' + params.toString());
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
       facts = await res.json();
     } catch (err) {
       facts = [];
@@ -156,8 +168,11 @@ window.Memory = (() => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ fact: v }),
       });
-      const out = await res.json();
-      if (!res.ok) throw new Error(out.detail || 'HTTP ' + res.status);
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
       editingFactId = null;
       toast('FACT SAVED', 'ok');
       await fetchFacts();
