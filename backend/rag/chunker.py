@@ -2,6 +2,8 @@ import re
 
 SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 
+MIN_ALNUM = 40  # chunks with fewer alphanumeric chars are discarded as noise
+
 
 def _find_split(text: str, start: int, end: int) -> int:
     """Find the best boundary at or before end for a chunk starting at start."""
@@ -75,4 +77,4 @@ def chunk_document(
         else:
             cursor = overlap_start
 
-    return chunks
+    return [c for c in chunks if sum(ch.isalnum() for ch in c["content"]) >= MIN_ALNUM]

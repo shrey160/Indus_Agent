@@ -1,10 +1,14 @@
 import logging
+import os
 
 import db
 from memory.budget import RAG_BUDGET, fit
+from rag.chunker import MIN_ALNUM
 from rag.embedder import EMBED_MODEL, embed_batch
 
 logger = logging.getLogger(__name__)
+
+RAG_AUTO_MIN_SCORE = float(os.environ.get("RAG_AUTO_MIN_SCORE", "0.65"))
 
 
 async def search_chunks(query: str, top_k: int = 3, min_score: float = 0.5) -> list[dict]:
@@ -45,6 +49,8 @@ async def search_chunks(query: str, top_k: int = 3, min_score: float = 0.5) -> l
 
     results = []
     for row in rows:
+        if sum(ch.isalnum() for ch in row["content"]) < MIN_ALNUM:
+            continue
         score = float(row["score"]) if row["score"] is not None else 0.0
         if score < min_score:
             continue
@@ -66,7 +72,7 @@ async def rag_context(user_message: str) -> tuple[str, list[dict]]:
 
     Returns (context_block, sources).  The block is trimmed to RAG_BUDGET.
     """
-    chunks = await search_chunks(user_message, top_k=3, min_score=0.5)
+    chunks = await search_chunks(user_message, top_k=3, min_score=RAG_AUTO_MIN_SCORE)
     if not chunks:
         return "", []
 
