@@ -201,6 +201,16 @@ window.Chat = (() => {
     return content;
   }
 
+  function addSysLine(text) {
+    clearEmpty();
+    const was = atBottom();
+    const { line, content } = logLine('SYS', 'role-sys', text);
+    line.classList.add('line-tool');
+    messagesEl.appendChild(line);
+    scrollStick(was);
+    return content;
+  }
+
   function addErrLine(message, withProvidersBtn) {
     clearEmpty();
     const was = atBottom();
@@ -807,6 +817,7 @@ window.Chat = (() => {
     newChat,
     loadConversation,
     currentId: () => conversationId,
+    addSysLine,
     toggleSearch,
     toast: (msg, kind) => window.UI.toast(msg, kind === 'error' ? 'error' : kind),
     isSearchOpen: () => !searchWrap.classList.contains('hidden'),

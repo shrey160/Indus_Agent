@@ -27,6 +27,10 @@
         window.Sidebar.openSection('settings');
         window.Sidebar.open();
       } },
+    { key: 'F12', label: 'RESEARCH', action: () => {
+        window.Sidebar.open();
+        window.Sidebar.openSection('research');
+      } },
     { key: 'ESC', label: 'CLOSE', action: onEscape },
   ];
 
@@ -42,6 +46,7 @@
       ['F9', 'Upload documents'],
       ['F10', 'Filter chat log'],
       ['F11', 'Export / settings'],
+      ['F12', 'Research section'],
       ['Ctrl/⌘ K', 'Focus model picker'],
       ['ESC', 'Close modal / sidebar / search'],
       ['⏎', 'Send message'],
@@ -64,6 +69,8 @@
       window.Chat.closeSearch();
     } else if (window.Chat.isDropdownOpen && window.Chat.isDropdownOpen()) {
       window.Chat.closeDropdown();
+    } else if (window.Research && window.Research.isViewOpen()) {
+      window.Research.closeView();
     } else if (window.Sidebar.isOpen()) {
       window.Sidebar.close();
     }
