@@ -20,7 +20,7 @@ from typing import Optional
 
 import db
 from providers.base import fmt_err
-from research import events, llm, planner, store
+from research import events, llm, planner, researcher, store
 from research.config import RESEARCH_MAX_CONCURRENT
 
 logger = logging.getLogger(__name__)
@@ -86,9 +86,9 @@ async def stop_scheduler() -> None:
 async def run_pipeline(run_id: str) -> None:
     """FSM driver. Stage boundaries are `events.transition` calls.
 
-    PLAN is real since SP-3 (role snapshot + planner.plan). The other stages
-    are MOCK (sleeps + fake payloads) so the SSE contract stays testable until
-    SP-4/SP-5 replace them.
+    PLAN and RESEARCH are real since SP-3/SP-4 (planner + researcher loop with
+    the insufficient_sources gate). WRITE/VERIFY are still MOCK (fake payloads)
+    so the SSE contract stays testable until SP-5 replaces them.
     """
     stage = "boot"
     started = time.monotonic()
@@ -114,24 +114,19 @@ async def run_pipeline(run_id: str) -> None:
         smart_row, smart_model = roles["smart"]
         await store.update_run(run_id, provider_id=smart_row["id"], model=smart_model)
         ctx = {"run": run, "roles": roles, "config": config_json, "llm": llm}
-        await planner.plan(ctx)
+        ctx["plan"] = await planner.plan(ctx)
 
         stage = "research"
         await events.transition(run_id, "researching")
-        tasks = await store.get_tasks(run_id)
-        for task in tasks:
+        await researcher.research_run(ctx)
+        counts = await store.run_counts(run_id)
+        if int(counts["notes"]) == 0:
+            detail = "insufficient_sources"
+            await events.transition(run_id, "failed", detail=detail)
             await events.append(
-                run_id, "task.start", {"idx": task["idx"], "question": task["question"]}
+                run_id, "error", {"stage": "research", "detail": detail, "retryable": True}
             )
-            await asyncio.sleep(1)
-            await store.set_task(
-                str(task["id"]), "done", summary="mock summary", iterations=1
-            )
-            await events.append(
-                run_id,
-                "task.done",
-                {"idx": task["idx"], "summary": "mock summary", "sources": 0, "notes": 0},
-            )
+            return
 
         stage = "write"
         await events.transition(run_id, "writing")
