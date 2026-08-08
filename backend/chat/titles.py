@@ -3,6 +3,7 @@ import logging
 
 import db
 from memory import extractor
+from providers.role_models import pick_local_model
 
 logger = logging.getLogger(__name__)
 
@@ -19,13 +20,10 @@ async def maybe_title(conversation_id: int, first_user_msg: str) -> None:
         if title != "New chat":
             return
 
-        picked = await extractor._pick_extract_provider()
+        picked = await pick_local_model("fast")
         if picked is None:
             return
-        provider_id, model = picked
-        row = await db.fetchrow("SELECT * FROM providers WHERE id = $1", provider_id)
-        if row is None:
-            return
+        row, model = picked
 
         text = await extractor._complete(
             row, model, TITLE_PROMPT.format(msg=first_user_msg[:800])

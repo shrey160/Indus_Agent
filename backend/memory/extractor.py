@@ -5,6 +5,7 @@ import re
 
 import db
 from providers import registry
+from providers.role_models import pick_local_model
 from .retriever import COSINE_DUP, EMBED_MODEL, cosine, embed_text
 
 logger = logging.getLogger(__name__)
@@ -21,44 +22,6 @@ durable facts (preferences, identity, projects, constraints). Rules:
 - return JSON: {{"facts": [{{"fact": "...", "category": "preference|identity|project|general"}}]}}
   or {{"facts": []}}
 EXCHANGE: user: {user} assistant: {assistant}"""
-
-
-MIN_LOCAL_MODEL_BYTES = 1_000_000
-
-
-def _is_real_local_model(provider_type: str, model) -> bool:
-    if provider_type == "ollama":
-        if ":cloud" in model.id or "embed" in model.id:
-            return False
-        if model.size_bytes is not None and model.size_bytes < MIN_LOCAL_MODEL_BYTES:
-            return False
-    return True
-
-
-def _model_size(model) -> int:
-    return model.size_bytes if model.size_bytes is not None else 2**63
-
-
-async def _pick_extract_provider() -> tuple[int, str] | None:
-    statuses = await registry.detect_all()
-    rows = await db.fetch("SELECT id, type, kind FROM providers ORDER BY id")
-    candidates: list[tuple[int, str, int, str]] = []
-    for row in rows:
-        if row["kind"] == "cloud":
-            continue
-        status = statuses.get(row["id"])
-        if status is None or status.state != "up" or not status.models:
-            continue
-        pool = [m for m in status.models if _is_real_local_model(row["type"], m)]
-        if not pool:
-            continue
-        smallest = min(pool, key=_model_size)
-        candidates.append((row["id"], smallest.id, _model_size(smallest), row["type"]))
-    if not candidates:
-        return None
-    prefer = [c for c in candidates if c[3] == "openai"] or candidates
-    best = min(prefer, key=lambda c: c[2])
-    return best[0], best[1]
 
 
 async def _complete(row, model: str, prompt: str) -> str:
@@ -150,18 +113,16 @@ async def run_extraction(
     assistant_text: str,
     source_msg_id: int | None = None,
 ) -> dict:
-    picked = await _pick_extract_provider()
+    picked = await pick_local_model("fast")
     if picked is None:
-        logger.info("memory extraction skipped: no up local provider")
-        return {"status": "skipped", "reason": "no up local provider"}
-    provider_id, model = picked
-    row = await db.fetchrow("SELECT * FROM providers WHERE id = $1", provider_id)
-    if row is None:
-        return {"status": "skipped", "reason": "provider vanished"}
+        logger.info("memory extraction skipped: no eligible local model")
+        return {"status": "skipped", "reason": "no eligible local model"}
+    row, model = picked
     prompt = PROMPT_TMPL.format(
         user=(user_text or "")[:2000], assistant=(assistant_text or "")[:4000]
     )
     raw = await _complete(row, model, prompt)
+    provider_id = row["id"]
     if not raw:
         return {"status": "no_facts", "provider": provider_id, "model": model}
     facts = _parse_facts(raw)

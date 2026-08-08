@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -41,6 +42,10 @@ def ensure_soul_file() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO)
+    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     ensure_soul_file()
     (DATA_DIR / "docs").mkdir(parents=True, exist_ok=True)
     await db.init_pool()
