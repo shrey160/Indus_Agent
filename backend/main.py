@@ -15,6 +15,8 @@ from memory.router import router as memory_router
 from mcp_client import manager as mcp_manager
 from providers.router import router as providers_router
 from rag.router import router as rag_router
+from research import runner as research_runner
+from research.router import router as research_router
 from retention import router as retention_router
 from tools import router as tools_router
 
@@ -53,7 +55,10 @@ async def lifespan(app: FastAPI):
     await db.run_ddl()
     await db.seed()
     await mcp_manager.start()
+    await research_runner.boot_recovery()
+    research_runner.start_scheduler()
     yield
+    await research_runner.stop_scheduler()
     await mcp_manager.stop()
     await db.close_pool()
 
@@ -74,6 +79,7 @@ app.include_router(rag_router)
 app.include_router(tools_router)
 app.include_router(backup_router)
 app.include_router(retention_router)
+app.include_router(research_router)
 
 
 @app.get("/health")
