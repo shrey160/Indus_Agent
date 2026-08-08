@@ -127,6 +127,15 @@ DDL: list[str] = [
     "ALTER TABLE app_state ADD COLUMN IF NOT EXISTS rag_auto BOOLEAN NOT NULL DEFAULT TRUE",
     "ALTER TABLE memories ADD COLUMN IF NOT EXISTS edited BOOLEAN DEFAULT FALSE",
     "ALTER TABLE app_state ADD COLUMN IF NOT EXISTS retention_months INT",
+    """
+    CREATE TABLE IF NOT EXISTS web_cache (
+        url        TEXT PRIMARY KEY,
+        content    TEXT NOT NULL,
+        title      TEXT,
+        fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        meta       JSONB NOT NULL DEFAULT '{}'
+    )
+    """,
 ]
 
 DEFAULT_PROVIDERS = [

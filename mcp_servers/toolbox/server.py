@@ -2,6 +2,7 @@ import os
 
 from fastmcp import FastMCP
 
+from tools.arxiv_search import arxiv_search
 from tools.rag import rag_ingest_text, rag_search
 from tools.util_datetime import get_datetime
 from tools.web_fetch import web_fetch
@@ -17,9 +18,20 @@ async def web_search_tool(query: str, max_results: int = 5) -> dict:
 
 
 @mcp.tool(name="web.fetch")
-async def web_fetch_tool(url: str, max_chars: int = 8000) -> dict:
-    """Fetch a URL and return cleaned readable text. Returns {url, title, text, truncated, source}."""
-    return await web_fetch(url, max_chars)
+async def web_fetch_tool(
+    url: str,
+    max_chars: int = 8000,
+    extract: str = "auto",
+    cache_ttl_hours: int = 24,
+) -> dict:
+    """Fetch a URL and return cleaned readable text. Returns {url, title, text, truncated, chars, cached, fetched_at, source}."""
+    return await web_fetch(url, max_chars, extract, cache_ttl_hours)
+
+
+@mcp.tool(name="arxiv.search")
+async def arxiv_search_tool(query: str, max_results: int = 5, days_back: int = 0) -> dict:
+    """Search arXiv (no API key). Returns {query, results: [{title, authors, abstract, url, published}], source: 'arxiv'}."""
+    return await arxiv_search(query, max_results, days_back)
 
 
 @mcp.tool(name="util.datetime")

@@ -290,7 +290,17 @@ docker run -it --rm --network local-ai-hub_appnet -p 127.0.0.1:6274:6274 \
 # if the browser can't connect, add:  -e HOST=0.0.0.0
 ```
 
-From the inspector you can list tools (expect `web.search`, `web.fetch`), view their input schemas, and call them with custom args — useful for isolating whether a problem is in the tool, the backend client, or the LLM.
+From the inspector you can list tools (expect `web.search`, `web.fetch`, `arxiv.search`, `rag.search`, `rag.ingest`, `util.datetime`), view their input schemas, and call them with custom args — useful for isolating whether a problem is in the tool, the backend client, or the LLM.
+
+### Toolbox tools
+
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| `web.search` | Search the web via the self-hosted SearXNG instance. | Always returns live results. |
+| `web.fetch` | Fetch a URL, extract main readable text, and cache it in Postgres (`web_cache`). | `extract: auto` uses trafilatura; `extract: raw` uses the legacy HTML strip. Cached entries expire after `cache_ttl_hours` (default 24). |
+| `arxiv.search` | Search arXiv preprints (no API key). | Defaults to **disabled** in the Tools sidebar; toggle it on before use. |
+| `rag.search` / `rag.ingest` | Search or add notes to the uploaded-document vector store. | Requires host Ollama with `nomic-embed-text`. |
+| `util.datetime` | Current date/time. | Call first when reasoning about "latest/today/recent". |
 
 Quick toolbox troubleshooting without the inspector:
 

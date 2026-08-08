@@ -1,23 +1,14 @@
 import os
 from typing import Any
 
-import asyncpg
 import httpx
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+from tools.db_pool import get_pool
+
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
 EMBED_MODEL = "nomic-embed-text"
 EMBED_DIM = 768
 BATCH_SIZE = 16
-
-_pool: asyncpg.Pool | None = None
-
-
-async def _get_pool() -> asyncpg.Pool:
-    global _pool
-    if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=4)
-    return _pool
 
 
 async def _embed(texts: list[str]) -> list[list[float]]:
@@ -126,7 +117,7 @@ async def rag_search(query: str, top_k: int = 5, min_score: float = 0.5) -> dict
     except Exception as exc:
         raise RuntimeError(f"embedding failed: {exc}") from exc
 
-    pool = await _get_pool()
+    pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -165,7 +156,7 @@ async def rag_ingest_text(text: str, title: str) -> dict[str, Any]:
     if not chunks:
         return {"ok": False, "error": "no indexable text", "source": "rag"}
 
-    pool = await _get_pool()
+    pool = await get_pool()
     async with pool.acquire() as conn:
         doc_id = await conn.fetchval(
             "INSERT INTO documents (filename, path, status) VALUES ($1, '', 'processing') RETURNING id",

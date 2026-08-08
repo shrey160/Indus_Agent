@@ -9,11 +9,14 @@ logger = logging.getLogger(__name__)
 
 KNOWN_TOOLS: dict[str, str] = {
     "web.search": "Search the web via local SearXNG. Returns {query, results: [{title, url, snippet}], source}.",
-    "web.fetch": "Fetch a URL and return cleaned readable text. Returns {url, title, text, truncated, source}.",
+    "web.fetch": "Fetch a URL, extract main text (trafilatura), and cache it. Returns {url, title, text, truncated, chars, cached, fetched_at, source}.",
     "util.datetime": "Current date/time. Always call before reasoning about 'latest/today/recent'.",
     "rag.search": "Semantic search over the user's uploaded documents. Returns {query, results: [{doc, chunk_id, snippet, score}], source: 'rag'}.",
     "rag.ingest": "Index an ad-hoc text note into the document store for later rag.search.",
+    "arxiv.search": "Search arXiv preprints (no key). Returns {query, results: [{title, authors, abstract, url, published}], source: 'arxiv'}.",
 }
+
+DEFAULT_DISABLED = {"arxiv.search"}
 
 
 async def ensure_tool_rows(tool_names: list[str]) -> dict[str, bool]:
@@ -21,11 +24,13 @@ async def ensure_tool_rows(tool_names: list[str]) -> dict[str, bool]:
     enabled = {r["tool_name"]: r["enabled"] for r in rows}
     for name in tool_names:
         if name not in enabled:
+            default = name not in DEFAULT_DISABLED
             await db.execute(
-                "INSERT INTO tool_settings (tool_name, enabled) VALUES ($1, TRUE)",
+                "INSERT INTO tool_settings (tool_name, enabled) VALUES ($1, $2)",
                 name,
+                default,
             )
-            enabled[name] = True
+            enabled[name] = default
     return enabled
 
 
