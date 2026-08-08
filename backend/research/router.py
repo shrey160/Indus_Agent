@@ -110,6 +110,7 @@ async def list_runs(status: str | None = None, limit: int = 50) -> list[dict]:
                 "depth": run["depth"],
                 "status": run["status"],
                 "title": run["title"],
+                "model": run["model"],
                 "counts": counts,
                 "created_at": run["created_at"],
                 "finished_at": run["finished_at"],

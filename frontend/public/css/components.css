@@ -1411,7 +1411,34 @@
 }
 
 .research-view-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text-1);
+}
+
+.research-view-model {
+  font-size: var(--fs-micro);
+  letter-spacing: .12em;
+  color: var(--cyan);
+  white-space: nowrap;
+}
+
+.research-view-path {
+  font-size: var(--fs-micro);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.md-raw {
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  padding: var(--pad-cell);
+  color: var(--text-0);
 }
 
 .research-view-actions {

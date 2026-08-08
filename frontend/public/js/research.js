@@ -88,6 +88,7 @@ window.Research = (() => {
     if (counts.tasks) bits.push('task ' + (counts.tasks_done || 0) + '/' + counts.tasks);
     if (counts.sources) bits.push(counts.sources + ' sources');
     if (counts.notes) bits.push(counts.notes + ' notes');
+    if (run.model) bits.push(run.model);
     if (bits.length) c.appendChild(el('div', 'research-meta', bits.join(' · ')));
     const open = () => openRunView(run.id);
     c.addEventListener('click', open);
@@ -359,8 +360,10 @@ window.Research = (() => {
     }
     if (!lastView || lastView !== L) return;
     const meta = STATUS_META[detail.status] || { dot: 'dot-grey', word: detail.status.toUpperCase() };
-    L.statusEl.textContent = meta.word;
-    L.statusEl.className = 'dot ' + meta.dot + ' research-view-status';
+    L.statusDot.className = 'dot ' + meta.dot;
+    L.statusWord.textContent = meta.word;
+    if (detail.model) L.modelEl.textContent = 'MODEL ' + detail.model;
+    else L.modelEl.textContent = '';
     renderTasks(detail.tasks || []);
     const terminal = TERMINAL.includes(detail.status);
     L.cancelBtn.disabled = terminal;
@@ -438,7 +441,12 @@ window.Research = (() => {
     back.setAttribute('aria-label', 'Back to research list');
     back.addEventListener('click', closeView);
     const title = el('span', 'research-view-title', 'RUN ' + String(runId).slice(0, 8));
-    const statusEl = el('span', 'dot dot-pending research-view-status');
+    const statusEl = el('span', 'research-view-status');
+    const statusDot = el('span', 'dot dot-pending');
+    const statusWord = el('span', 'research-status-word', 'QUEUED');
+    statusEl.appendChild(statusDot);
+    statusEl.appendChild(statusWord);
+    const modelEl = el('span', 'research-view-model', '');
     const actions = el('div', 'research-view-actions');
     const cancelBtn = el('button', 'btn', '[ CANCEL RUN ]');
     const resumeBtn = el('button', 'btn', '[ RESUME ]');
@@ -480,6 +488,7 @@ window.Research = (() => {
     head.appendChild(back);
     head.appendChild(title);
     head.appendChild(statusEl);
+    head.appendChild(modelEl);
     head.appendChild(actions);
 
     const cols = el('div', 'research-view-cols');
@@ -497,7 +506,7 @@ window.Research = (() => {
     viewEl.appendChild(cols);
     document.body.appendChild(viewEl);
 
-    lastView = { runId, logEl: logCol, tasksEl, sourcesEl, statusEl, cancelBtn, resumeBtn, delBtn, reportBtn, lastId: 0, terminal: false, report: false };
+    lastView = { runId, logEl: logCol, tasksEl, sourcesEl, statusEl, statusDot, statusWord, modelEl, cancelBtn, resumeBtn, delBtn, reportBtn, lastId: 0, terminal: false, report: false };
     detailLoop(runId);
     watchStream(runId);
   }
@@ -710,13 +719,17 @@ window.Research = (() => {
     back.setAttribute('aria-label', 'Back to research list');
     back.addEventListener('click', closeView);
     const title = el('span', 'research-view-title', 'REPORT ' + String(runId).slice(0, 8));
+    const pathEl = el('span', 'research-view-path hidden', '');
     const actions = el('div', 'research-view-actions');
     const dl = el('button', 'btn', '[ DOWNLOAD .md ]');
+    const rawBtn = el('button', 'btn', '[ RAW ]');
     const printBtn = el('button', 'btn', '[ PRINT ]');
     actions.appendChild(dl);
+    actions.appendChild(rawBtn);
     actions.appendChild(printBtn);
     head.appendChild(back);
     head.appendChild(title);
+    head.appendChild(pathEl);
     head.appendChild(actions);
 
     const bodyEl = el('div', 'research-report-body');
@@ -725,14 +738,28 @@ window.Research = (() => {
     document.body.appendChild(viewEl);
 
     lastView = { runId, report: true, sources: null };
+    let rawText = null;
+    let rawMode = false;
+    let rawPre = null;
+    let renderedEl = null;
     (async () => {
       try {
-        const [res, srcRes] = await Promise.all([
+        const [res, srcRes, detRes] = await Promise.all([
           fetch('/api/research/' + runId + '/report'),
           fetch('/api/research/' + runId + '/sources'),
+          fetch('/api/research/' + runId),
         ]);
         if (lastView !== null && lastView.runId === runId) {
           if (srcRes.ok) lastView.sources = await srcRes.json();
+        }
+        if (detRes.ok) {
+          const det = await detRes.json();
+          if (det.report_path) {
+            pathEl.textContent = det.report_path;
+            pathEl.classList.remove('hidden');
+          } else {
+            pathEl.classList.add('hidden');
+          }
         }
         if (!res.ok) {
           let detail = 'HTTP ' + res.status;
@@ -741,12 +768,32 @@ window.Research = (() => {
           return;
         }
         const text = await res.text();
-        bodyEl.appendChild(renderMarkdown(text));
+        rawText = text;
+        renderedEl = renderMarkdown(text);
+        bodyEl.appendChild(renderedEl);
         bodyEl.scrollTop = 0;
       } catch (err) {
         bodyEl.appendChild(el('div', 'provider-error', 'REPORT LOAD FAILED — ' + err.message));
       }
     })();
+
+    rawBtn.addEventListener('click', () => {
+      if (!rawText || !renderedEl) return;
+      if (rawMode) {
+        if (rawPre && rawPre.parentNode) bodyEl.removeChild(rawPre);
+        rawPre = null;
+        renderedEl.classList.remove('hidden');
+        rawMode = false;
+        rawBtn.textContent = '[ RAW ]';
+      } else {
+        renderedEl.classList.add('hidden');
+        rawPre = el('pre', 'md-raw');
+        rawPre.textContent = rawText;
+        bodyEl.appendChild(rawPre);
+        rawMode = true;
+        rawBtn.textContent = '[ RENDER ]';
+      }
+    });
 
     dl.addEventListener('click', async () => {
       try {
