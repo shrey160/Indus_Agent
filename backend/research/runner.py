@@ -2,9 +2,8 @@
 
 Postgres is the queue and the checkpoint (PHASE_9 "Runner Internals"). One
 asyncio.Task per run; a module-level scheduler pops `queued` runs FIFO while
-under RESEARCH_MAX_CONCURRENT. Stage functions are imported lazily so missing
-pieces (real planner/researcher/writer/verifier from SP-3/4/5) stay inert —
-until then the pipeline runs the MOCK stages below.
+under RESEARCH_MAX_CONCURRENT. The PLAN stage runs the real planner (SP-3);
+research/write/verify still run the MOCK stages below until SP-4/SP-5 land.
 
 Cancellation semantics: a user POST /cancel cancels the in-flight task, and the
 pipeline's CancelledError handler persists `cancelled`. Shutdown cancellation
@@ -14,13 +13,14 @@ crash, and boot recovery on the next start marks those runs `interrupted`.
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 from typing import Optional
 
 import db
 from providers.base import fmt_err
-from research import events, store
+from research import events, llm, planner, store
 from research.config import RESEARCH_MAX_CONCURRENT
 
 logger = logging.getLogger(__name__)
@@ -86,8 +86,9 @@ async def stop_scheduler() -> None:
 async def run_pipeline(run_id: str) -> None:
     """FSM driver. Stage boundaries are `events.transition` calls.
 
-    SP-2 stages are MOCK (sleeps + fake payloads) so the SSE contract is
-    testable before any LLM exists; SP-3/4/5 replace them with the real stages.
+    PLAN is real since SP-3 (role snapshot + planner.plan). The other stages
+    are MOCK (sleeps + fake payloads) so the SSE contract stays testable until
+    SP-4/SP-5 replace them.
     """
     stage = "boot"
     started = time.monotonic()
@@ -96,23 +97,24 @@ async def run_pipeline(run_id: str) -> None:
         if run is None:
             return
         query = run["query"]
+        config_json = run["config"]
+        if isinstance(config_json, str):
+            config_json = json.loads(config_json or "{}")
 
         stage = "plan"
         await events.transition(run_id, "planning")
-        await asyncio.sleep(1)
-        await events.append(
-            run_id,
-            "plan",
-            {
-                "tasks": [{"idx": 1, "question": query}],
-                "assumptions": ["mock pipeline (SP-2) — no LLM involved"],
-                "title": "Mock report",
-            },
-        )
-        await store.insert_tasks(
-            run_id, [{"idx": 1, "question": query, "kind": "research"}]
-        )
-        await store.update_run(run_id, title="Mock report")
+        roles = await llm.resolve_roles(run["model_policy"])
+        if roles["smart"] is None:
+            detail = "no eligible model for smart role"
+            await events.transition(run_id, "failed", detail=detail)
+            await events.append(
+                run_id, "error", {"stage": "plan", "detail": detail, "retryable": True}
+            )
+            return
+        smart_row, smart_model = roles["smart"]
+        await store.update_run(run_id, provider_id=smart_row["id"], model=smart_model)
+        ctx = {"run": run, "roles": roles, "config": config_json, "llm": llm}
+        await planner.plan(ctx)
 
         stage = "research"
         await events.transition(run_id, "researching")
