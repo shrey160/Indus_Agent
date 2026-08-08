@@ -136,6 +136,81 @@ DDL: list[str] = [
         meta       JSONB NOT NULL DEFAULT '{}'
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS research_runs (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      conversation_id INT REFERENCES conversations(id) ON DELETE SET NULL,
+      query           TEXT NOT NULL,
+      depth           TEXT NOT NULL DEFAULT 'standard',      -- quick | standard | deep
+      status          TEXT NOT NULL DEFAULT 'queued',
+        -- queued | planning | researching | writing | verifying
+        -- done | failed | cancelled | interrupted
+      model_policy    TEXT NOT NULL DEFAULT 'local_only',    -- local_only | allow_cloud
+      provider_id     INT,         -- smart-role provider snapshot (providers.id is INT)
+      model           TEXT,        -- smart-role model snapshot
+      config          JSONB NOT NULL DEFAULT '{}',           -- resolved preset + overrides + role_models hook
+      plan            JSONB,
+      title           TEXT,
+      report_path     TEXT,        -- e.g. research/2026-08/slug-a1b2.md (under /data)
+      summary         TEXT,        -- first ~500 chars for list views
+      metrics         JSONB NOT NULL DEFAULT '{}',
+      error           TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      finished_at     TIMESTAMPTZ
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS research_runs_status ON research_runs(status, created_at DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS research_tasks (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      run_id     UUID NOT NULL REFERENCES research_runs(id) ON DELETE CASCADE,
+      idx        INT NOT NULL,
+      question   TEXT NOT NULL,
+      kind       TEXT NOT NULL DEFAULT 'research',
+      status     TEXT NOT NULL DEFAULT 'pending',  -- pending | running | done | failed | skipped
+      summary    TEXT,
+      iterations INT NOT NULL DEFAULT 0,
+      UNIQUE(run_id, idx)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS research_sources (
+      id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      run_id       UUID NOT NULL REFERENCES research_runs(id) ON DELETE CASCADE,
+      n            INT NOT NULL,                     -- citation number within the run
+      url          TEXT NOT NULL,
+      title        TEXT, domain TEXT,
+      published_at TIMESTAMPTZ,
+      fetched_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      excerpt      TEXT,                             -- first ~600 chars of extracted text
+      fetch_status TEXT NOT NULL DEFAULT 'ok',       -- ok | failed | cached
+      meta         JSONB NOT NULL DEFAULT '{}',
+      UNIQUE(run_id, n), UNIQUE(run_id, url)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS research_notes (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      run_id     UUID NOT NULL REFERENCES research_runs(id) ON DELETE CASCADE,
+      task_id    UUID NOT NULL REFERENCES research_tasks(id) ON DELETE CASCADE,
+      source_id  UUID REFERENCES research_sources(id) ON DELETE SET NULL,
+      note       TEXT NOT NULL,
+      salience   REAL NOT NULL DEFAULT 0.5,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS research_notes_task ON research_notes(task_id, salience DESC)",
+    """
+    CREATE TABLE IF NOT EXISTS research_events (
+      id      BIGSERIAL PRIMARY KEY,
+      run_id  UUID NOT NULL REFERENCES research_runs(id) ON DELETE CASCADE,
+      ts      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      kind    TEXT NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS research_events_run ON research_events(run_id, id)",
 ]
 
 DEFAULT_PROVIDERS = [

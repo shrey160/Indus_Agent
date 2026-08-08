@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI):
     logging.getLogger("httpx").setLevel(logging.WARNING)
     ensure_soul_file()
     (DATA_DIR / "docs").mkdir(parents=True, exist_ok=True)
+    (DATA_DIR / "research").mkdir(parents=True, exist_ok=True)
     await db.init_pool()
     await db.run_ddl()
     await db.seed()
