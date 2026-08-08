@@ -13,10 +13,13 @@ CITE_INSTRUCTION = "Cite sources using [n] when using <context> or rag.search re
 
 
 async def build_messages(conversation_id: int) -> tuple[list[dict], list[dict]]:
+    # Additive guard (PHASE_9 chat integration): research run notices are
+    # stored as role='system' rows — never forward them to the LLM.
     rows = await db.fetch(
         """
         SELECT role, content FROM messages
         WHERE conversation_id = $1
+          AND role IN ('user', 'assistant')
         ORDER BY id DESC
         LIMIT $2
         """,

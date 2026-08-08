@@ -4,4 +4,5 @@ __pycache__
 *.pyc
 data/docs
 data/exports
+data/research
 data/soul.md

@@ -19,8 +19,9 @@ import time
 from typing import Optional
 
 import db
+from providers import registry
 from providers.base import fmt_err
-from research import events, llm, planner, researcher, store
+from research import events, llm, planner, researcher, store, verifier, writer
 from research.config import RESEARCH_MAX_CONCURRENT
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,81 @@ _active: dict[str, asyncio.Task] = {}
 _scheduler: Optional[asyncio.Task] = None
 _wake = asyncio.Event()
 _cancel_requested: set[str] = set()
+
+
+def _init_metrics() -> dict:
+    return {
+        "searches": 0,
+        "fetches": 0,
+        "fetch_failures": 0,
+        "notes": 0,
+        "iterations": 0,
+        "tool_calls": 0,
+        "tokens": {"prompt": 0, "completion": 0},
+        "cost_usd": 0.0,
+        "estimated": False,
+        "llm_calls": 0,
+        "stage_durations_s": {},
+    }
+
+
+class _TrackingLLM:
+    """Adapter over the llm module so every `complete()` call feeds
+    ctx['metrics'] (tokens/cost) — the stages never accumulate usage themselves.
+    `load_prompt`/`extract_json` are stateless and just forwarded."""
+
+    def __init__(self, ctx: dict) -> None:
+        self._ctx = ctx
+
+    def load_prompt(self, name: str) -> str:
+        return llm.load_prompt(name)
+
+    def extract_json(self, text: str) -> dict | list | None:
+        return llm.extract_json(text)
+
+    async def complete(self, *args, **kwargs) -> dict:
+        result = await llm.complete(*args, **kwargs)
+        _merge_usage(
+            self._ctx,
+            result.get("usage") or {},
+            result.get("provider_id"),
+            result.get("model"),
+        )
+        return result
+
+
+def _merge_usage(ctx: dict, usage: dict, provider_id, model) -> None:
+    """Add one llm.complete result's usage to the running rollup. Local
+    estimates (usage['estimated']) are counted but never priced (PHASE_9
+    Metrics: chars/4 is the standard local path, cost is cloud-only)."""
+    m = ctx["metrics"]
+    m["llm_calls"] += 1
+    m["tokens"]["prompt"] += int(usage.get("prompt_tokens") or 0)
+    m["tokens"]["completion"] += int(usage.get("completion_tokens") or 0)
+    if usage.get("estimated"):
+        m["estimated"] = True
+        return
+    cost = registry.cost_for(provider_id, model, usage)
+    if cost is not None:
+        m["cost_usd"] += cost
+
+
+async def _persist_metrics(run_id: str, ctx: dict, stage: str, duration_s: float) -> None:
+    """Persist the running rollup and emit a `metrics` SSE event at a stage end."""
+    ctx["metrics"]["stage_durations_s"][stage] = round(duration_s, 1)
+    await store.update_run(run_id, metrics=ctx["metrics"])
+    await events.append(run_id, "metrics", {"stage": stage, "metrics": ctx["metrics"]})
+
+
+async def _chat_notice(conversation_id: int, content: str) -> None:
+    """Insert a one-line research system message via the normal chat path
+    (PHASE_9 chat integration). build_messages filters system rows out of the
+    prompt (chat/context.py) — these are user-visible notices only."""
+    await db.execute(
+        "INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'system', $2)",
+        conversation_id,
+        content,
+    )
 
 
 async def scheduler_loop() -> None:
@@ -86,9 +162,8 @@ async def stop_scheduler() -> None:
 async def run_pipeline(run_id: str) -> None:
     """FSM driver. Stage boundaries are `events.transition` calls.
 
-    PLAN and RESEARCH are real since SP-3/SP-4 (planner + researcher loop with
-    the insufficient_sources gate). WRITE/VERIFY are still MOCK (fake payloads)
-    so the SSE contract stays testable until SP-5 replaces them.
+    PLAN/RESEARCH/WRITE/VERIFY are real (planner, researcher loop, report
+    writer, verifier). WRITE/VERIFY landed in SP-5.
     """
     stage = "boot"
     started = time.monotonic()
@@ -102,6 +177,7 @@ async def run_pipeline(run_id: str) -> None:
             config_json = json.loads(config_json or "{}")
 
         stage = "plan"
+        t_stage = time.monotonic()
         await events.transition(run_id, "planning")
         roles = await llm.resolve_roles(run["model_policy"])
         if roles["smart"] is None:
@@ -113,12 +189,22 @@ async def run_pipeline(run_id: str) -> None:
             return
         smart_row, smart_model = roles["smart"]
         await store.update_run(run_id, provider_id=smart_row["id"], model=smart_model)
-        ctx = {"run": run, "roles": roles, "config": config_json, "llm": llm}
+        ctx = {
+            "run": run,
+            "roles": roles,
+            "config": config_json,
+            "run_started": started,
+        }
+        ctx["metrics"] = _init_metrics()
+        ctx["llm"] = _TrackingLLM(ctx)
         ctx["plan"] = await planner.plan(ctx)
+        await _persist_metrics(run_id, ctx, "plan", time.monotonic() - t_stage)
 
         stage = "research"
+        t_stage = time.monotonic()
         await events.transition(run_id, "researching")
         await researcher.research_run(ctx)
+        await _persist_metrics(run_id, ctx, "research", time.monotonic() - t_stage)
         counts = await store.run_counts(run_id)
         if int(counts["notes"]) == 0:
             detail = "insufficient_sources"
@@ -127,37 +213,46 @@ async def run_pipeline(run_id: str) -> None:
                 run_id, "error", {"stage": "research", "detail": detail, "retryable": True}
             )
             return
+        await _persist_metrics(run_id, ctx, "research", time.monotonic() - t_stage)
 
         stage = "write"
+        t_stage = time.monotonic()
         await events.transition(run_id, "writing")
-        await events.append(
-            run_id, "report.delta", {"section": "Intro", "text": "Mock report intro."}
-        )
-        await asyncio.sleep(1)
-        await events.append(
-            run_id,
-            "report.delta",
-            {"section": "Synthesis", "text": "Mock synthesis."},
-        )
+        report_path = await writer.write_report(ctx)
+        await _persist_metrics(run_id, ctx, "write", time.monotonic() - t_stage)
 
         stage = "verify"
+        t_stage = time.monotonic()
         await events.transition(run_id, "verifying")
-        await events.append(run_id, "verify", {"checked": 1, "unsupported": 0, "fixed": 0})
-        await asyncio.sleep(1)
+        await verifier.verify_report(ctx, report_path)
+        await _persist_metrics(run_id, ctx, "verify", time.monotonic() - t_stage)
 
-        await store.update_run(run_id, summary="mock summary")
         await events.transition(run_id, "done")
+        counts = await store.run_counts(run_id)
+        metrics = ctx["metrics"]
+        duration_s = round(time.monotonic() - started, 1)
         await events.append(
             run_id,
             "done",
             {
-                "report_path": None,
-                "sources": 0,
-                "duration_s": round(time.monotonic() - started, 1),
-                "cost_usd": 0.0,
-                "tokens": {"prompt": 0, "completion": 0},
+                "report_path": report_path,
+                "sources": int(counts["sources"]),
+                "duration_s": duration_s,
+                "cost_usd": metrics["cost_usd"],
+                "tokens": {
+                    "prompt": metrics["tokens"]["prompt"],
+                    "completion": metrics["tokens"]["completion"],
+                },
             },
         )
+        fresh = await store.get_run(run_id)
+        if fresh is not None and fresh.get("conversation_id"):
+            summary = (fresh.get("summary") or "").strip().replace("\n", " ")
+            await _chat_notice(
+                fresh["conversation_id"],
+                f"RESEARCH DONE ▸ {fresh.get('title') or query[:80]} — "
+                f"{summary[:200]} [run {run_id[:8]}]",
+            )
     except asyncio.CancelledError:
         # User-initiated cancel (request_cancel) → persist `cancelled`. The
         # run keeps its transient status during a shutdown cancel so boot

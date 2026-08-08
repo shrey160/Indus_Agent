@@ -86,6 +86,14 @@ async def start_run(body: StartRequest) -> dict:
     run = await store.create_run(
         query, body.depth, body.model_policy, body.conversation_id, resolved
     )
+    if body.conversation_id is not None:
+        # Chat integration (PHASE_9): one-line system notice via the normal chat
+        # path. build_messages filters system rows out of the prompt.
+        await db.execute(
+            "INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'system', $2)",
+            body.conversation_id,
+            f"RESEARCH STARTED ▸ {query}",
+        )
     return {"run_id": str(run["id"]), "status": "queued"}
 
 
