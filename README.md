@@ -144,7 +144,7 @@ Ad-hoc notes can be indexed without a file via the `rag.ingest` tool in the Tool
 
 Long-form, citation-backed reports: the app plans sub-questions, searches the web through the SearXNG instance, fetches pages, extracts task-relevant notes, writes a structured markdown report with numbered citations, and verifies it against the sources.
 
-1. Open the **Research** sidebar section (or press **F12**), `[ + ]` → type a research question → pick a preset → `[ START ]`.
+1. Open the **Research** sidebar section (or press **F12**), `[ + ]` → type a research question → pick a preset → optionally pick a specific model for the research (smart) role via the **SMART MODEL ▾** dropdown (default `AUTO (POLICY)`) → `[ START ]`.
 2. Track progress live: event log, per-task status, sources, and the report view (rendered `[ RENDER ]` or raw `[ RAW ]`).
 3. From a conversation, the `[ RESEARCH ▸ ]` chip above the composer starts a run attached to that conversation — you get `RESEARCH STARTED ▸ …` / `RESEARCH DONE ▸ …` system notices.
 4. Reports land in `data/research/YYYY-MM/<slug>-<id8>.md`; `[ DOWNLOAD .md ]` / `[ PRINT ]` in the report view.
@@ -168,7 +168,7 @@ curl http://localhost:8000/api/research/<run_id>/report
 | STANDARD | 6 / 2 / 8 / 60 | ~15–24 min |
 | DEEP | 10 / 3 / 12 / 120 | not yet exercised |
 
-**Limits:** runs execute sequentially (`RESEARCH_MAX_CONCURRENT`, default 1). Pages are fetched as plain text — JavaScript-rendered sites may yield little. Default policy is **local-only**; toggle ALLOW CLOUD MODELS per run to let the planner use the active cloud model. Runs fail cleanly (`insufficient_sources`, budget exhaustion, toolbox/searxng outages) — the failure is a terminal state with an error event, never a crash. `config_overrides` only ever *lower* the preset caps (e.g. `{"tool_calls": 5, "tasks": 2}`).
+**Limits:** runs execute sequentially (`RESEARCH_MAX_CONCURRENT`, default 1). Pages are fetched as plain text — JavaScript-rendered sites may yield little. Default policy is **local-only**; the modal's **SMART MODEL** dropdown can pin the smart role to a specific local or cloud model per run (a manual pick bypasses policy and size caps; `AUTO (POLICY)` keeps the automatic local pick). Runs fail cleanly (`insufficient_sources`, budget exhaustion, toolbox/searxng outages) — the failure is a terminal state with an error event, never a crash. `config_overrides` only ever *lower* the preset caps (e.g. `{"tool_calls": 5, "tasks": 2}`).
 
 Backups (`/api/export`) include `data/research/` automatically — restores bring reports and run history back.
 
@@ -263,7 +263,7 @@ The api service also receives `DATABASE_URL` and `DATA_DIR=/data` from compose (
 | `/api/settings/retention` | GET / PUT | Read / set chat retention in months (null = off) |
 | `/api/retention/archive` | POST | Archive + delete conversations older than the retention window |
 | `/api/maintenance/vacuum` | POST | `VACUUM ANALYZE` the database |
-| `/api/research` | POST | Start a run — `{ "query", "depth"?: "quick"\|"standard"\|"deep", "model_policy"?: "local_only"\|"allow_cloud", "conversation_id"?, "config_overrides"? }` → 201 `{ run_id, status: "queued" }` |
+| `/api/research` | POST | Start a run — `{ "query", "depth"?: "quick"\|"standard"\|"deep", "model_policy"?: "local_only"\|"allow_cloud", "conversation_id"?, "config_overrides"?, "model_override"?: {provider_id, model} }` → 201 `{ run_id, status: "queued" }`. `model_override` pins the smart role to a specific provider model (bypasses policy/caps — a manual pick; 400 on unknown provider id or empty model; omit it to keep the AUTO policy pick) |
 | `/api/research` | GET | List runs (`?status=`, `?limit=`) with counts + model |
 | `/api/research/{run_id}` | GET | Run detail: plan, tasks, counts, metrics, model, error |
 | `/api/research/{run_id}/stream` | GET | SSE event stream (`?last_event_id=`) — status/plan/search/fetch/note/reflect/write/verify/done |
