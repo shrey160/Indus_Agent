@@ -208,7 +208,7 @@ window.Research = (() => {
     smartRow.appendChild(selBtn);
     const smartPanel = el('div', 'research-smart-dropdown hidden');
     body.appendChild(smartRow);
-    body.appendChild(smartPanel);
+    smartRow.appendChild(smartPanel);
 
     function smartLabel() {
       return smartPick ? '[ ' + smartPick.label + ' ▾ ]' : '[ AUTO ▾ ]';
