@@ -195,18 +195,147 @@ window.Research = (() => {
     }
     body.appendChild(depthRow);
 
-    let allowCloud = false;
-    const toggleRow = el('div', 'research-toggle-row');
-    toggleRow.appendChild(el('span', 'research-caption', 'ALLOW CLOUD MODELS'));
-    const cloudBtn = el('button', 'btn', '[◂ OFF ]');
-    cloudBtn.type = 'button';
-    cloudBtn.addEventListener('click', () => {
-      allowCloud = !allowCloud;
-      cloudBtn.textContent = allowCloud ? '[ ON ▸]' : '[◂ OFF ]';
-      cloudBtn.classList.toggle('btn-primary', allowCloud);
-    });
-    toggleRow.appendChild(cloudBtn);
-    body.appendChild(toggleRow);
+    let smartPick = null;
+    try { smartPick = JSON.parse(localStorage.getItem('research.smartModel') || 'null'); } catch (e) { smartPick = null; }
+    let smartOpen = false;
+    let smartDismiss = null;
+
+    const smartRow = el('div', 'research-smart-row');
+    smartRow.appendChild(el('span', 'research-caption', 'SMART MODEL'));
+    const selBtn = el('button', 'btn research-smart-select', '');
+    selBtn.type = 'button';
+    selBtn.setAttribute('aria-label', 'Choose smart role model');
+    smartRow.appendChild(selBtn);
+    const smartPanel = el('div', 'research-smart-dropdown hidden');
+    body.appendChild(smartRow);
+    body.appendChild(smartPanel);
+
+    function smartLabel() {
+      return smartPick ? '[ ' + smartPick.label + ' ▾ ]' : '[ AUTO ▾ ]';
+    }
+
+    function closeSmartPanel() {
+      smartOpen = false;
+      smartPanel.classList.add('hidden');
+      if (smartDismiss) {
+        document.removeEventListener('click', smartDismiss.onDoc);
+        document.removeEventListener('keydown', smartDismiss.onEsc, true);
+        smartDismiss = null;
+      }
+    }
+
+    function setSmartPick(pick) {
+      smartPick = pick;
+      if (pick) localStorage.setItem('research.smartModel', JSON.stringify(pick));
+      else localStorage.removeItem('research.smartModel');
+      selBtn.textContent = smartLabel();
+      closeSmartPanel();
+    }
+
+    function smartGroup(holder, title) {
+      const group = el('div', 'dropdown-group');
+      group.appendChild(document.createTextNode('── '));
+      group.appendChild(el('b', '', title));
+      group.appendChild(document.createTextNode(' ' + '─'.repeat(Math.max(2, 24 - title.length))));
+      holder.appendChild(group);
+    }
+
+    function smartPrice(m) {
+      if (!m.pricing || m.pricing.prompt === undefined || m.pricing.prompt === null) return null;
+      const per_m = parseFloat(m.pricing.prompt) * 1e6;
+      return Number.isFinite(per_m) ? '$' + per_m.toFixed(2) + '/M' : null;
+    }
+
+    function smartSize(bytes) {
+      const gb = bytes / 1e9;
+      return gb >= 0.1 ? gb.toFixed(1) + ' GB' : Math.round(bytes / 1e6) + ' MB';
+    }
+
+    function smartModelRow(holder, provider, m) {
+      const item = el('div', 'dropdown-model');
+      item.appendChild(el('span', '', m.id));
+      const meta = el('span', 'model-meta');
+      const price = smartPrice(m);
+      if (price) meta.appendChild(document.createTextNode(price));
+      if (m.is_free) meta.appendChild(el('span', 'chip-free', 'free'));
+      if (m.size_bytes) meta.appendChild(document.createTextNode(' ' + smartSize(m.size_bytes)));
+      item.appendChild(meta);
+      item.addEventListener('click', () => {
+        setSmartPick({ provider_id: provider.id, model: m.id, label: provider.name + ' · ' + m.id });
+      });
+      holder.appendChild(item);
+    }
+
+    async function openSmartPanel() {
+      if (smartOpen) {
+        closeSmartPanel();
+        return;
+      }
+      smartOpen = true;
+      smartPanel.textContent = '';
+      const auto = el('div', 'dropdown-model');
+      auto.appendChild(el('span', '', 'AUTO (POLICY)'));
+      auto.appendChild(el('span', 'model-meta', 'policy default'));
+      auto.addEventListener('click', () => setSmartPick(null));
+      smartPanel.appendChild(auto);
+      try {
+        const res = await fetch('/api/providers');
+        if (!res.ok) {
+          smartPanel.appendChild(el('div', 'dropdown-group', 'PROVIDERS FAILED — HTTP ' + res.status));
+        } else {
+          const providers = await res.json();
+          const locals = [];
+          const clouds = [];
+          for (const p of providers) {
+            if (p.status.state === 'down' || p.status.state === 'unreachable' || p.status.state === 'bad_key' || p.status.state === 'no_credits') continue;
+            if (!p.status.models || p.status.models.length === 0) continue;
+            (p.kind === 'cloud' ? clouds : locals).push(p);
+          }
+          let any = false;
+          if (locals.length) {
+            smartGroup(smartPanel, 'LOCAL');
+            for (const p of locals) {
+              smartGroup(smartPanel, p.name + ' · ' + p.status.models.length);
+              for (const m of p.status.models) smartModelRow(smartPanel, p, m);
+            }
+            any = true;
+          }
+          if (clouds.length) {
+            smartGroup(smartPanel, '☁ CLOUD');
+            for (const p of clouds) {
+              smartGroup(smartPanel, p.name + ' · ' + p.status.models.length);
+              for (const m of p.status.models) smartModelRow(smartPanel, p, m);
+            }
+            any = true;
+          }
+          if (!any) {
+            const empty = el('div', 'dropdown-group');
+            empty.appendChild(el('b', '', 'NO MODELS AVAILABLE'));
+            smartPanel.appendChild(empty);
+          }
+        }
+      } catch (err) {
+        smartPanel.appendChild(el('div', 'dropdown-group', 'PROVIDERS UNREACHABLE — ' + err.message));
+      }
+      if (!smartOpen) return;
+      smartPanel.classList.remove('hidden');
+      const onDoc = (ev) => {
+        if (selBtn.contains(ev.target) || smartPanel.contains(ev.target)) return;
+        closeSmartPanel();
+      };
+      const onEsc = (ev) => {
+        ev.stopPropagation();
+        closeSmartPanel();
+      };
+      smartDismiss = { onDoc, onEsc };
+      setTimeout(() => {
+        document.addEventListener('click', onDoc);
+        document.addEventListener('keydown', onEsc, true);
+      }, 0);
+    }
+
+    selBtn.textContent = smartLabel();
+    selBtn.addEventListener('click', openSmartPanel);
 
     const actions = el('div', 'modal-actions');
     const cancelBtn = el('button', 'btn', '[ CANCEL ]');
@@ -227,7 +356,8 @@ window.Research = (() => {
       }
       startBtn.disabled = true;
       try {
-        const payload = { query: q, depth: activeDepth, model_policy: allowCloud ? 'allow_cloud' : 'local_only' };
+        const payload = { query: q, depth: activeDepth, model_policy: 'local_only' };
+        if (smartPick) payload.model_override = { provider_id: smartPick.provider_id, model: smartPick.model };
         if (opts.conversationId) payload.conversation_id = opts.conversationId;
         const res = await fetch('/api/research', {
           method: 'POST',

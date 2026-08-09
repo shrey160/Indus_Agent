@@ -1386,6 +1386,40 @@
   margin-top: 0;
 }
 
+.research-smart-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  position: relative;
+}
+
+.research-smart-row .research-caption {
+  margin-top: 0;
+}
+
+.research-smart-select {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-smart-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 210;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 6px;
+}
+
 .research-view {
   position: fixed;
   inset: 40px 0 28px 0;
