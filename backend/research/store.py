@@ -38,6 +38,15 @@ def _row_dict(row) -> dict | None:
     return {k: row[k] for k in row.keys()}
 
 
+def _db_text(value: str | None) -> str | None:
+    """Postgres cannot store NUL bytes (0x00) in text; web-derived content
+    occasionally contains them (malformed HTML in fetched pages). Strip
+    before INSERT — same sanitization at every web-text boundary."""
+    if value is None:
+        return None
+    return value.replace("\x00", "")
+
+
 async def create_run(
     query: str,
     depth: str,
@@ -117,9 +126,17 @@ async def update_run(run_id: str, **fields) -> None:
 
 
 async def insert_tasks(run_id: str, tasks: list[dict]) -> None:
+    """Replace the run's task set (one transaction).
+
+    Resume re-runs the PLAN stage, so the previous attempt's tasks are
+    replaced wholesale; a fresh insert would collide on UNIQUE(run_id, idx).
+    Notes cascade via the task_id FK; sources keep their citation numbers
+    (add_source dedups by canonical URL).
+    """
     pool = db.get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await conn.execute("DELETE FROM research_tasks WHERE run_id = $1", run_id)
             for task in tasks:
                 await conn.execute(
                     """
@@ -196,9 +213,9 @@ async def add_source(
                 run_id,
                 next_n,
                 canonical,
-                title,
-                domain,
-                excerpt,
+                _db_text(title),
+                _db_text(domain),
+                _db_text(excerpt),
                 fetch_status,
                 json.dumps(meta),
             )
@@ -220,7 +237,7 @@ async def add_note(
         run_id,
         task_id,
         source_id,
-        note,
+        _db_text(note),
         float(salience),
     )
 

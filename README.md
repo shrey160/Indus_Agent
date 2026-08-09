@@ -140,6 +140,38 @@ The `[ AUTO ]` toggle controls whether the assistant automatically retrieves con
 
 Ad-hoc notes can be indexed without a file via the `rag.ingest` tool in the Tools section (`text` + `title`).
 
+## Deep research
+
+Long-form, citation-backed reports: the app plans sub-questions, searches the web through the SearXNG instance, fetches pages, extracts task-relevant notes, writes a structured markdown report with numbered citations, and verifies it against the sources.
+
+1. Open the **Research** sidebar section (or press **F12**), `[ + ]` → type a research question → pick a preset → `[ START ]`.
+2. Track progress live: event log, per-task status, sources, and the report view (rendered `[ RENDER ]` or raw `[ RAW ]`).
+3. From a conversation, the `[ RESEARCH ▸ ]` chip above the composer starts a run attached to that conversation — you get `RESEARCH STARTED ▸ …` / `RESEARCH DONE ▸ …` system notices.
+4. Reports land in `data/research/YYYY-MM/<slug>-<id8>.md`; `[ DOWNLOAD .md ]` / `[ PRINT ]` in the report view.
+
+Via API:
+
+```bash
+curl -X POST http://localhost:8000/api/research \
+  -H "Content-Type: application/json" \
+  -d '{"query": "…", "depth": "standard"}'
+# stream events (SSE, gapless ids — reconnect with last_event_id):
+curl -N "http://localhost:8000/api/research/<run_id>/stream"
+curl http://localhost:8000/api/research/<run_id>/report
+```
+
+**Presets** (times are observed on a local LM Studio model, one run at a time):
+
+| Preset | Cap (tasks / iterations / sources per task / tool calls) | Observed wall time |
+|--------|:---:|:---:|
+| QUICK | 3 / 1 / 5 / 20 | ~11 min |
+| STANDARD | 6 / 2 / 8 / 60 | ~15–24 min |
+| DEEP | 10 / 3 / 12 / 120 | not yet exercised |
+
+**Limits:** runs execute sequentially (`RESEARCH_MAX_CONCURRENT`, default 1). Pages are fetched as plain text — JavaScript-rendered sites may yield little. Default policy is **local-only**; toggle ALLOW CLOUD MODELS per run to let the planner use the active cloud model. Runs fail cleanly (`insufficient_sources`, budget exhaustion, toolbox/searxng outages) — the failure is a terminal state with an error event, never a crash. `config_overrides` only ever *lower* the preset caps (e.g. `{"tool_calls": 5, "tasks": 2}`).
+
+Backups (`/api/export`) include `data/research/` automatically — restores bring reports and run history back.
+
 ## Cloud providers (OpenRouter etc.)
 
 Beyond local models, you can add an API-key provider and use both from one picker:
@@ -231,6 +263,15 @@ The api service also receives `DATABASE_URL` and `DATA_DIR=/data` from compose (
 | `/api/settings/retention` | GET / PUT | Read / set chat retention in months (null = off) |
 | `/api/retention/archive` | POST | Archive + delete conversations older than the retention window |
 | `/api/maintenance/vacuum` | POST | `VACUUM ANALYZE` the database |
+| `/api/research` | POST | Start a run — `{ "query", "depth"?: "quick"\|"standard"\|"deep", "model_policy"?: "local_only"\|"allow_cloud", "conversation_id"?, "config_overrides"? }` → 201 `{ run_id, status: "queued" }` |
+| `/api/research` | GET | List runs (`?status=`, `?limit=`) with counts + model |
+| `/api/research/{run_id}` | GET | Run detail: plan, tasks, counts, metrics, model, error |
+| `/api/research/{run_id}/stream` | GET | SSE event stream (`?last_event_id=`) — status/plan/search/fetch/note/reflect/write/verify/done |
+| `/api/research/{run_id}/cancel` | POST | Cancel a running run |
+| `/api/research/{run_id}/resume` | POST | Re-queue an `interrupted` or `failed` run |
+| `/api/research/{run_id}/sources` | GET | Sources with citation `n`, url, title, fetch status, excerpt |
+| `/api/research/{run_id}/report` | GET | The report as markdown |
+| `/api/research/{run_id}` | DELETE | Delete a run (terminal states only) |
 | `/api/tools` | GET | List MCP tools with health + enabled state |
 | `/api/tools/{name}/toggle` | POST | Enable / disable a tool |
 | `/api/tools/{name}/test` | POST | Run a tool with `{ "args": {...} }` |
@@ -260,7 +301,7 @@ local-ai-hub/
 ## Data & persistence
 
 - **Postgres** — queryable data (providers, conversations, messages) lives in the `pgdata` Docker volume. Use the built-in export (above) for backups; raw `docker compose exec db pg_dump -U localai localai` works too.
-- **`./data`** — human-editable files (e.g. `soul.md`, the assistant persona). It is a bind mount, so it's a plain folder on your host; gitignored content is never committed. `data/exports/` holds import snapshots and retention archives.
+- **`./data`** — human-editable files (e.g. `soul.md`, the assistant persona). It is a bind mount, so it's a plain folder on your host; gitignored content is never committed. `data/research/` holds generated research reports; `data/exports/` holds import snapshots and retention archives.
 - All services run `restart: unless-stopped`; prod compose has no source bind mounts and no `--reload`/`--watch` (use `compose.dev.yaml` for development).
 
 ## Security & privacy

@@ -13,6 +13,7 @@ the stage; per-section events are enough for the SSE contract and are the
 upgrade path if finer progress granularity is ever wanted.
 """
 
+import asyncio
 import logging
 import os
 import re
@@ -204,23 +205,21 @@ async def _sources_section(ctx: dict) -> str:
     return "\n".join(lines)
 
 
-async def write_report(ctx: dict) -> str:
-    """Full WRITE stage. Returns the report's relative path (e.g.
-    research/YYYY-MM/slug-<id8>.md) under DATA_DIR."""
+async def _flush_report(
+    ctx: dict, sections_text: list[str], *, cancelled: bool = False
+) -> str:
+    """Stitch the report (completed sections or the partial set), write it to
+    /data, persist report_path/summary, and return the relative path.
+
+    `cancelled=True` is the partial flush of the PHASE_9 Cancel path: whatever
+    sections were drafted are preserved under an `INCOMPLETE — cancelled`
+    header — a cancelled run keeps its partial report.
+    """
     run = ctx["run"]
     run_id = str(run["id"])
     query = run["query"]
     plan = ctx.get("plan") or {}
     depth = run["depth"]
-
-    sections = await _outline(ctx)
-    ctx["sections"] = sections  # verifier re-uses the outline mapping
-    sections_text: list[str] = []
-    for section in sections:
-        bundle = await notes_bundle(ctx, section["task_idxs"])
-        text = await _draft_section(ctx, section, bundle)
-        await events.append(run_id, "report.delta", {"section": section["title"], "text": text})
-        sections_text.append(f"## {section['title']}\n\n{text}")
 
     title = plan.get("report_title") or query[:80]
     smart = ctx["roles"]["smart"]
@@ -230,7 +229,9 @@ async def write_report(ctx: dict) -> str:
         f"- **Query:** {query}",
         f"- **Depth:** {depth} · **Model:** {smart[1]} · **Date:** {datetime.now().strftime('%Y-%m-%d')}",
     ]
-    if ctx.get("partial"):
+    if cancelled:
+        meta.append("- **INCOMPLETE — cancelled**")
+    elif ctx.get("partial") or ctx.get("budget_hit") == "wall_clock":
         meta.append("- **PARTIAL — time budget exhausted**")
 
     assumptions = plan.get("assumptions") or []
@@ -243,9 +244,10 @@ async def write_report(ctx: dict) -> str:
         if plan.get("understanding")
         else ""
     )
+    body = "\n\n".join(sections_text) if sections_text else "*(no sections were drafted)*"
 
     report = "\n\n".join(
-        [head, intro + "\n\n".join(sections_text), await _synthesis_limitations(ctx), await _sources_section(ctx)]
+        [head, intro + body, await _synthesis_limitations(ctx), await _sources_section(ctx)]
     )
     report += await _footer_line(ctx)
 
@@ -259,5 +261,44 @@ async def write_report(ctx: dict) -> str:
         f.write(report)
 
     await store.update_run(run_id, report_path=rel_path, summary=report[:500])
-    logger.info("write: run %s -> %s (%d chars)", run_id, rel_path, len(report))
+    logger.info(
+        "write: run %s -> %s (%d chars, cancelled=%s)",
+        run_id,
+        rel_path,
+        len(report),
+        cancelled,
+    )
     return rel_path
+
+
+async def write_report(ctx: dict) -> str:
+    """Full WRITE stage. Returns the report's relative path (e.g.
+    research/YYYY-MM/slug-<id8>.md) under DATA_DIR.
+
+    Cancellation (PHASE_9 "Cancel"): the section loop is a stage boundary —
+    on CancelledError the sections drafted so far are flushed as a partial
+    report marked `INCOMPLETE — cancelled`, then the exception is re-raised so
+    the runner records the `cancelled` transition (the status change belongs to
+    the runner, never here). The flush is best-effort: it must not mask the
+    cancellation itself.
+    """
+    run_id = str(ctx["run"]["id"])
+
+    sections_text: list[str] = []
+    try:
+        sections = await _outline(ctx)
+        ctx["sections"] = sections  # verifier re-uses the outline mapping
+        for section in sections:
+            bundle = await notes_bundle(ctx, section["task_idxs"])
+            text = await _draft_section(ctx, section, bundle)
+            sections_text.append(f"## {section['title']}\n\n{text}")
+            await events.append(
+                run_id, "report.delta", {"section": section["title"], "text": text}
+            )
+    except asyncio.CancelledError:
+        try:
+            await _flush_report(ctx, sections_text, cancelled=True)
+        except Exception:
+            logger.exception("write: partial flush on cancel failed for run %s", run_id)
+        raise
+    return await _flush_report(ctx, sections_text)

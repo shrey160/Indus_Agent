@@ -289,7 +289,7 @@ window.Research = (() => {
       case 'status':
         return '→ ' + (payload.status || '') + (payload.detail ? ' — ' + payload.detail : '');
       case 'error':
-        return (payload.detail || payload.stage || '') + (payload.retryable ? ' (retryable)' : '');
+        return (payload.tool ? payload.tool + ': ' : '') + (payload.detail || payload.stage || '') + (payload.retryable ? ' (retryable)' : '');
       case 'plan.degraded':
         return payload.reason || '';
       case 'budget.exhausted':

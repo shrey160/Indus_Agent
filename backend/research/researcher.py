@@ -40,6 +40,27 @@ async def call_tool_timeout(name: str, args: dict, timeout_s: float) -> dict:
     )
 
 
+async def _tool_failed(ctx: dict, tool: str, exc: Exception) -> None:
+    """Record one run-level `error` event per failing tool per run (AC-5
+    degradation matrix: the error event must name the tool call that failed).
+    Per-item failures are tolerated — this is an audit trail, not an abort."""
+    key = f"_tool_err_{tool}"
+    if ctx.get(key):
+        return
+    ctx[key] = True
+    run_id = str(ctx["run"]["id"])
+    await events.append(
+        run_id,
+        "error",
+        {
+            "stage": "research",
+            "tool": tool,
+            "detail": fmt_err(exc)[:300],
+            "retryable": True,
+        },
+    )
+
+
 async def research_run(ctx: dict) -> None:
     """RESEARCH stage driver: loop tasks in idx order, enforce the wall-clock
     deadline between tasks, then close the current task and skip the rest."""
@@ -182,6 +203,7 @@ async def _search_and_fetch(ctx: dict, task: dict, queries: list[str]) -> None:
             metrics["searches"] += 1
             metrics["tool_calls"] += 1
             logger.warning("web.search failed for %r: %s", q, fmt_err(exc))
+            await _tool_failed(ctx, "web.search", exc)
             await events.append(
                 run_id,
                 "search",
@@ -251,6 +273,7 @@ async def _fetch_one(ctx: dict, task: dict, cand: dict) -> None:
         metrics["tool_calls"] += 1
         metrics["fetch_failures"] += 1
         logger.warning("web.fetch failed for %s: %s", url, fmt_err(exc))
+        await _tool_failed(ctx, "web.fetch", exc)
         try:
             await store.add_source(
                 run_id,
@@ -323,6 +346,7 @@ async def _arxiv_pass(ctx: dict, task: dict, seen: set[str], cache_fresh: set[st
             )
     except Exception as exc:
         logger.warning("arxiv.search failed for task %s: %s", task["idx"], fmt_err(exc))
+        await _tool_failed(ctx, "arxiv.search", exc)
         return
     metrics["tool_calls"] += 1
     for item in result.get("results") or []:
@@ -371,6 +395,7 @@ async def _rag_pass(ctx: dict, task: dict) -> None:
             )
     except Exception as exc:
         logger.warning("rag.search failed for task %s: %s", task["idx"], fmt_err(exc))
+        await _tool_failed(ctx, "rag.search", exc)
         return
     for hit in result.get("results") or []:
         snippet = str(hit.get("snippet") or "")[: NOTE_MAX_CHARS - 60]
@@ -494,6 +519,20 @@ async def _close_task(
     """Finish a task with a summary (reflect-with-what-exists on force-close)."""
     run_id = str(ctx["run"]["id"])
     idx = task["idx"]
+    if ctx.get("budget_hit") == "tool_calls" and not ctx.get("_toolcap_evented"):
+        # Hard-cap force-close: every guard exhaustion is logged as an event
+        # (PHASE_9 Guards). The wall-clock equivalent fires in research_run.
+        ctx["_toolcap_evented"] = True
+        elapsed = time.monotonic() - ctx.get("run_started", time.monotonic())
+        await events.append(
+            run_id,
+            "budget.exhausted",
+            {
+                "guard": "tool_calls",
+                "tool_calls": int(ctx["metrics"]["tool_calls"]),
+                "elapsed_s": round(elapsed, 1),
+            },
+        )
     if reflect is None:
         reflect = await _reflect(ctx, task, 0)
     if not reflect.get("summary"):
