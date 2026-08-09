@@ -4,6 +4,12 @@ A self-hosted, local-first AI chat hub, fully Dockerized. It auto-detects local 
 
 > Working name in the UI/code: **Local AI Hub**. All LLM traffic uses the OpenAI-compatible wire protocol, so the API speaks one language regardless of the underlying provider.
 
+## Demo
+
+[![Indus Agent demo video](https://img.youtube.com/vi/9SUnNx6sCxo/0.jpg)](https://www.youtube.com/watch?v=9SUnNx6sCxo)
+
+<video src="https://www.youtube.com/watch?v=9SUnNx6sCxo" controls></video>
+
 ## Features
 
 - **Local provider detection** — auto-discovers Ollama and LM Studio on the host (fast parallel probe, cached); add/remove custom OpenAI-compatible endpoints.
