@@ -28,12 +28,18 @@ router = APIRouter(prefix="/api/research", tags=["research"])
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 
 
+class ModelOverride(BaseModel):
+    provider_id: int
+    model: str
+
+
 class StartRequest(BaseModel):
     query: str
     depth: str = "standard"
     model_policy: str = "local_only"
     conversation_id: int | None = None
     config_overrides: dict | None = None
+    model_override: ModelOverride | None = None
 
 
 def _run_dict(run: dict) -> dict:
@@ -79,10 +85,25 @@ async def start_run(body: StartRequest) -> dict:
             raise HTTPException(
                 status_code=400, detail="conversation_id does not exist"
             )
+    override_model: str | None = None
+    if body.model_override is not None:
+        override_model = body.model_override.model.strip()
+        if not override_model:
+            raise HTTPException(status_code=400, detail="model_override.model is required")
+        exists = await db.fetchval(
+            "SELECT 1 FROM providers WHERE id = $1", body.model_override.provider_id
+        )
+        if not exists:
+            raise HTTPException(status_code=400, detail="unknown provider id")
     try:
         resolved = config.resolve_config(body.depth, body.config_overrides)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    if body.model_override is not None:
+        resolved["smart_override"] = {
+            "provider_id": body.model_override.provider_id,
+            "model": override_model,
+        }
     run = await store.create_run(
         query, body.depth, body.model_policy, body.conversation_id, resolved
     )

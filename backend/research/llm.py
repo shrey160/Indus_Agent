@@ -121,15 +121,21 @@ async def complete(
     }
 
 
-async def resolve_roles(model_policy: str) -> dict[str, tuple[dict, str] | None]:
+async def resolve_roles(
+    model_policy: str, smart_override: dict | None = None
+) -> dict[str, tuple[dict, str] | None]:
     """Resolve the smart/fast role snapshots for a run.
 
     Returns {"smart": (provider_row, model) | None, "fast": (provider_row, model) | None}.
 
-    smart:
-      allow_cloud -> the active chat provider/model as-is (row includes
-                     api_key_enc for registry; HP-007-safe).
-      local_only  -> pick_local_model('smart') (active local model preferred).
+    smart resolution order:
+      smart_override  -> SELECT * FROM providers WHERE id=$1 (HP-007-safe row);
+                         that provider/model verbatim, bypassing policy and
+                         caps (explicit user choice). A missing row (deleted
+                         provider) leaves smart None -> caller fails the run.
+      allow_cloud     -> the active chat provider/model as-is (row includes
+                         api_key_enc for registry; HP-007-safe).
+      local_only      -> pick_local_model('smart') (active local model preferred).
     fast: ALWAYS pick_local_model('fast') regardless of policy.
     A None role means the caller fails the run (retryable).
     """
@@ -139,7 +145,13 @@ async def resolve_roles(model_policy: str) -> dict[str, tuple[dict, str] | None]
     if fast is not None:
         roles["fast"] = (fast[0], fast[1])
 
-    if model_policy == "allow_cloud":
+    if smart_override is not None:
+        row = await db.fetchrow(
+            "SELECT * FROM providers WHERE id = $1", smart_override["provider_id"]
+        )
+        if row is not None:
+            roles["smart"] = (dict(row), smart_override["model"])
+    elif model_policy == "allow_cloud":
         state = await db.fetchrow(
             """
             SELECT p.*, s.active_model

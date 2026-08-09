@@ -47,6 +47,7 @@ def _init_metrics() -> dict:
         "estimated": False,
         "llm_calls": 0,
         "stage_durations_s": {},
+        "smart_source": "auto",
     }
 
 
@@ -179,7 +180,8 @@ async def run_pipeline(run_id: str) -> None:
         stage = "plan"
         t_stage = time.monotonic()
         await events.transition(run_id, "planning")
-        roles = await llm.resolve_roles(run["model_policy"])
+        smart_override = config_json.get("smart_override")
+        roles = await llm.resolve_roles(run["model_policy"], smart_override)
         if roles["smart"] is None:
             detail = "no eligible model for smart role"
             await events.transition(run_id, "failed", detail=detail)
@@ -196,6 +198,7 @@ async def run_pipeline(run_id: str) -> None:
             "run_started": started,
         }
         ctx["metrics"] = _init_metrics()
+        ctx["metrics"]["smart_source"] = "user" if smart_override else "auto"
         ctx["llm"] = _TrackingLLM(ctx)
         ctx["plan"] = await planner.plan(ctx)
         await _persist_metrics(run_id, ctx, "plan", time.monotonic() - t_stage)
