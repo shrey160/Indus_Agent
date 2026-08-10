@@ -26,24 +26,39 @@ Everything local, one OpenAI-compatible wire protocol, one docker compose up.
 
 ## Architecture
 
-```
-┌────────────────────────── Docker network: appnet ──────────────────────────┐
-│                                                                             │
-│   frontend :3000 ──/api/*──► api :8000 (FastAPI)      toolbox :9000 (MCP)   │
-│   (node:20-alpine,          ├─ provider registry      ├─ web.search         │
-│    zero-dep server.js)      ├─ SSE chat streaming     ├─ web.fetch          │
-│                             ├─ memory / RAG /         ├─ arxiv.search       │
-│                             ├─ research jobs         ├─ rag.search/ingest   │
-│                             └─ Postgres persistence   └─ util.datetime       │
-│                    ┌───────┴────────┐        ▲              │                │
-│                    ▼                ▼        └── searxng :8080 (internal)    │
-│              db (pgvector:pg16)   ./data bind mount                          │
-│              pgdata volume        soul.md, docs/, research/, exports/        │
-└──────────────┬─────────────────┬────────────────────────────────────────────┘
-               │                 │
-     host.docker.internal        host.docker.internal
-               ▼                 ▼
-     Ollama :11434 ────────  LM Studio :1234 (on your host)
+```mermaid
+flowchart LR
+    subgraph Host["Your machine (localhost)"]
+        Chrome["Chrome browser<br/>http://localhost:3000"]
+        Ollama["Ollama server<br/>:11434"]
+        LMStudio["LM Studio server<br/>:1234"]
+    end
+
+    subgraph Stack["Docker Compose · network: appnet"]
+        direction TB
+        FE["frontend :3000<br/>(node:20-alpine)<br/>serves static UI<br/>proxies /api/* → api:8000<br/>unbuffered SSE passthrough"]
+        API["api :8000<br/>(FastAPI)<br/>provider registry · SSE chat<br/>persona & memory · RAG<br/>deep-research pipeline"]
+        TBX["toolbox :9000<br/>(FastMCP · streamable HTTP)<br/>web.search · web.fetch<br/>arxiv.search · rag.search<br/>rag.ingest · util.datetime"]
+        SX["searxng :8080<br/>(self-hosted · internal)"]
+        DB[("db :5432<br/>pgvector / pg16<br/>pgdata volume")]
+        DATA["/data bind mount<br/>soul.md · docs/<br/>research/ · exports/"]
+        Internet(("internet"))
+
+        FE -->|"/api/* — unbuffered SSE"| API
+        API -->|"MCP streamable HTTP<br/>http://toolbox:9000/mcp"| TBX
+        TBX -->|"JSON search"| SX
+        SX -->|"queried engines"| Internet
+        TBX -.->|"arxiv.org API"| Internet
+        API -.->|"cloud chat (optional)<br/>Fernet-encrypted keys"| Internet
+        API <-->|"asyncpg"| DB
+        TBX <-->|"asyncpg"| DB
+        API --- DATA
+        TBX --- DATA
+
+        API -->|"OpenAI-compatible chat<br/>host.docker.internal"| Ollama
+        API -->|"OpenAI-compatible chat"| LMStudio
+        TBX -->|"nomic-embed-text embeddings<br/>host.docker.internal"| Ollama
+    end
 ```
 
 | Service | Image | Published port | Purpose |
@@ -54,7 +69,7 @@ Everything local, one OpenAI-compatible wire protocol, one docker compose up.
 | `searxng` | `searxng/searxng` | — (internal) | Self-hosted web search |
 | `db` | `pgvector/pgvector:pg16` | — (internal) | Relational + vector storage |
 
-Only `3000` and `8000` are published — and both bind to `127.0.0.1` (localhost-only).
+Only `3000` and `8000` are published in production — both bound to `127.0.0.1` (localhost-only). `toolbox`'s `9000` is published in dev mode only (`compose.dev.yaml`), for the MCP Inspector.
 
 ## Tech stack
 
