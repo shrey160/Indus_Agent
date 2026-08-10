@@ -46,14 +46,6 @@ A self-hosted, local-first AI chat hub, fully Dockerized. It auto-detects local 
 
 Only `3000` and `8000` are published — and bound to `127.0.0.1` (localhost-only).
 
-## Roadmap
-
-- **Phase 2** — Cloud providers (OpenRouter) with Fernet-encrypted API keys, LOCAL/CLOUD sidebar split, searchable model picker. *(done)*
-- **Phase 3** — Persona & memory: `soul.md` injection, async fact extraction, memory with token budget. *(done)*
-- **Phase 4** — MCP toolbox + web tools (FastMCP streamable-HTTP server, self-hosted SearXNG). *(done)*
-- **Phase 5** — RAG: upload → chunk → embed → pgvector; citations. *(done)*
-- **Phase 6** — Management UI & polish: conversations/memory/soul/documents, export/import, retention, hardening. *(done)*
-- **Phase 7** — Advanced tracks (optional): sandbox, routing policies, local media, research feeds.
 
 ## Prerequisites
 
