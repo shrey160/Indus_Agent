@@ -172,7 +172,7 @@ curl http://localhost:8000/api/research/<run_id>/report
 |--------|:---:|:---:|
 | QUICK | 3 / 1 / 5 / 20 | ~11 min |
 | STANDARD | 6 / 2 / 8 / 60 | ~15–24 min |
-| DEEP | 10 / 3 / 12 / 120 | not yet exercised |
+| DEEP | 10 / 3 / 12 / 120 | ~25-40 min |
 
 **Limits:** runs execute sequentially (`RESEARCH_MAX_CONCURRENT`, default 1). Pages are fetched as plain text — JavaScript-rendered sites may yield little. Default policy is **local-only**; the modal's **SMART MODEL** dropdown can pin the smart role to a specific local or cloud model per run (a manual pick bypasses policy and size caps; `AUTO (POLICY)` keeps the automatic local pick). Runs fail cleanly (`insufficient_sources`, budget exhaustion, toolbox/searxng outages) — the failure is a terminal state with an error event, never a crash. `config_overrides` only ever *lower* the preset caps (e.g. `{"tool_calls": 5, "tasks": 2}`).
 
