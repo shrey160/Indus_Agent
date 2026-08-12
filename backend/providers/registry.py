@@ -31,33 +31,54 @@ def context_length(provider_id: int, model: str) -> int | None:
     return entry["context_length"] if entry else None
 
 
+def _decrypt_key(row: dict) -> str:
+    api_key = ""
+    api_key_enc = row.get("api_key_enc")
+    if api_key_enc:
+        try:
+            api_key = crypto.decrypt(api_key_enc)
+        except Exception:
+            api_key = ""
+    return api_key
+
+
 def build_provider(row: asyncpg.Record | dict) -> ProviderBase:
     row = dict(row)
     if row["type"] == "ollama":
         return OllamaProvider(row["name"], row["base_url"])
     if row.get("kind") == "cloud":
-        api_key = ""
-        api_key_enc = row.get("api_key_enc")
-        if api_key_enc:
-            try:
-                api_key = crypto.decrypt(api_key_enc)
-            except Exception:
-                api_key = ""
         return CloudProvider(
             row["name"],
             row["base_url"],
-            api_key,
+            _decrypt_key(row),
             preset=row.get("preset"),
         )
-    return OpenAICompatProvider(row["name"], row["base_url"])
+    return OpenAICompatProvider(row["name"], row["base_url"], _decrypt_key(row))
+
+
+def _rewrite_loopback(url: str) -> str:
+    """127.0.0.1 / localhost resolve inside the container to the container itself;
+    the host's loopback is only reachable via host.docker.internal."""
+    url = re.sub(
+        r"^([a-z]+://)127\.0\.0\.1(?=[:/])", r"\1host.docker.internal", url, flags=re.I
+    )
+    url = re.sub(
+        r"^([a-z]+://)localhost(?=[:/])", r"\1host.docker.internal", url, flags=re.I
+    )
+    return url
 
 
 def normalize_base_url(raw: str) -> str:
-    url = raw.strip()
-    if re.fullmatch(r"\d+", url):
+    url = (raw or "").strip()
+    port_shorthand = re.fullmatch(r"\d+", url)
+    # base_url must not carry a /v1 suffix (HP-006) — subpaths append it.
+    if url.endswith("/v1"):
+        url = url[: -len("/v1")]
+    if port_shorthand:
         url = f"http://host.docker.internal:{url}"
     elif not url.startswith(("http://", "https://")):
         url = f"http://{url}"
+    url = _rewrite_loopback(url)
     return url.rstrip("/")
 
 

@@ -8,6 +8,7 @@ import db
 from . import crypto, registry
 from .base import ProviderStatus
 from .cloud import CloudProvider
+from .openai_compat import OpenAICompatProvider
 from .presets import CLOUD_PRESETS
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
@@ -144,22 +145,46 @@ async def create_provider(body: ProviderCreate) -> dict:
     if not body.name:
         raise HTTPException(status_code=400, detail="name is required for local providers")
     base_url = registry.normalize_base_url(body.base_url)
-    probe_row = {"name": body.name, "base_url": base_url, "type": body.type}
-    status = await registry.build_provider(probe_row).ping()
+    api_key = (body.api_key or "").strip()
+    if body.type == "openai":
+        probe = OpenAICompatProvider(body.name, base_url, api_key=api_key)
+    else:
+        if api_key:
+            raise HTTPException(status_code=400, detail="API keys are not supported for Ollama providers")
+        probe = registry.build_provider(
+            {"name": body.name, "base_url": base_url, "type": body.type}
+        )
+    status = await probe.ping()
+    if status.state == "bad_key":
+        raise HTTPException(status_code=400, detail="invalid API key")
     if status.state == "down":
         raise HTTPException(
             status_code=400, detail=f"provider unreachable: {status.error}"
         )
-    row = await db.fetchrow(
-        """
-        INSERT INTO providers (name, base_url, type, kind)
-        VALUES ($1, $2, $3, 'local')
-        RETURNING id, name, base_url, type, is_default, kind, preset, key_hint
-        """,
-        body.name,
-        base_url,
-        body.type,
-    )
+    if api_key:
+        row = await db.fetchrow(
+            """
+            INSERT INTO providers (name, base_url, type, kind, api_key_enc, key_hint)
+            VALUES ($1, $2, $3, 'local', $4, $5)
+            RETURNING id, name, base_url, type, is_default, kind, preset, key_hint
+            """,
+            body.name,
+            base_url,
+            body.type,
+            crypto.encrypt(api_key),
+            crypto.mask(api_key),
+        )
+    else:
+        row = await db.fetchrow(
+            """
+            INSERT INTO providers (name, base_url, type, kind)
+            VALUES ($1, $2, $3, 'local')
+            RETURNING id, name, base_url, type, is_default, kind, preset, key_hint
+            """,
+            body.name,
+            base_url,
+            body.type,
+        )
     registry.invalidate_cache()
     return await _provider_status(row, status)
 
@@ -200,17 +225,31 @@ async def revalidate_provider(provider_id: int) -> dict:
 @router.put("/{provider_id}/key")
 async def update_key(provider_id: int, body: KeyRequest) -> dict:
     row = await _get_provider_or_404(provider_id)
-    if row["kind"] != "cloud":
-        raise HTTPException(status_code=400, detail="only cloud providers store API keys")
+    can_store_key = row["kind"] == "cloud" or (
+        row["kind"] == "local" and row["type"] == "openai"
+    )
+    if not can_store_key:
+        raise HTTPException(status_code=400, detail="providers of this type do not store API keys")
     if not body.api_key:
         raise HTTPException(status_code=400, detail="api_key is required")
-    probe = CloudProvider(row["name"], row["base_url"], body.api_key, preset=row["preset"])
-    status = await probe.ping()
-    await _reject_cloud_validation(status)
+    api_key = body.api_key.strip()
+    if row["kind"] == "cloud":
+        probe = CloudProvider(row["name"], row["base_url"], api_key, preset=row["preset"])
+        status = await probe.ping()
+        await _reject_cloud_validation(status)
+    else:
+        probe = OpenAICompatProvider(row["name"], row["base_url"], api_key=api_key)
+        status = await probe.ping()
+        if status.state == "bad_key":
+            raise HTTPException(status_code=400, detail="invalid API key")
+        if status.state == "down":
+            raise HTTPException(
+                status_code=400, detail=f"provider unreachable: {status.error}"
+            )
     await db.execute(
         "UPDATE providers SET api_key_enc = $1, key_hint = $2 WHERE id = $3",
-        crypto.encrypt(body.api_key),
-        crypto.mask(body.api_key),
+        crypto.encrypt(api_key),
+        crypto.mask(api_key),
         provider_id,
     )
     registry.invalidate_cache()
