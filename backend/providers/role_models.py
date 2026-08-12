@@ -21,6 +21,8 @@ def is_real_local_model(provider_type: str, model: ModelInfo) -> tuple[bool, str
         return False, "cloud stub"
     if "embed" in model.id.lower():
         return False, "embedding-only name"
+    if "speech" in model.id.lower() or "parakeet" in model.id.lower() or "canary" in model.id.lower():
+        return False, "non-chat (speech/asr) model"
     size = model.size_bytes
     if size is not None:
         if size < MIN_LOCAL_MODEL_BYTES:
