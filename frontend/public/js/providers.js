@@ -19,6 +19,7 @@
       'Open LM Studio → Developer (Server) tab → Start Server.',
       'Enable "Serve on local network" so containers can reach it. Default port: 1234.',
       'Load a model in LM Studio before chatting — the server pings OK even with no model loaded, but chat will hang.',
+      'Authenticated local servers (e.g. Unsloth Desktop on port 8888): paste the API key into the optional key field — it is validated and stored encrypted, like cloud keys.',
       'See README → "Host networking" for details.',
     ],
   };
@@ -216,7 +217,7 @@
   function editKeyModal(providerId, providerName) {
     const wrap = el('div');
     wrap.appendChild(el('p', 'privacy-note',
-      'Update the API key for ' + (providerName || 'this cloud provider') + '. The key is validated against the provider, then encrypted at rest.'));
+      'Update the API key for ' + (providerName || 'this provider') + '. The key is validated against the provider, then encrypted at rest.'));
     const key = el('input', 'add-input');
     key.type = 'password';
     key.placeholder = 'new API key';
@@ -264,7 +265,7 @@
     card.appendChild(el('div', 'provider-state ' + state.cls, state.text));
     const metaBits = [];
     if (provider.kind === 'cloud' && provider.preset) metaBits.push(provider.preset + ' preset');
-    if (provider.kind === 'cloud' && provider.key_hint) metaBits.push('key ' + provider.key_hint);
+    if (provider.key_hint) metaBits.push('key ' + provider.key_hint);
     card.appendChild(el('div', 'provider-url', metaBits.length ? metaBits.join(' · ') : provider.base_url));
     if (provider.status.error && provider.status.state !== 'down') {
       card.appendChild(el('div', 'provider-error', provider.status.error));
@@ -280,7 +281,7 @@
       helpBtn = el('button', 'btn', '[ HOW TO START ▾ ]');
       actions.appendChild(helpBtn);
     }
-    if (provider.kind === 'cloud') {
+    if (provider.kind === 'cloud' || (provider.kind === 'local' && provider.key_hint)) {
       const keyBtn = el('button', 'btn', '[ EDIT KEY ]');
       keyBtn.addEventListener('click', () => editKeyModal(provider.id, provider.name));
       actions.appendChild(keyBtn);
@@ -351,9 +352,22 @@
     const type = el('select', 'add-input');
     type.appendChild(el('option', '', 'openai'));
     type.appendChild(el('option', '', 'ollama'));
+    const localKeyWrap = el('div', 'add-key');
+    const localKey = el('input', 'add-input');
+    localKey.type = 'password';
+    localKey.placeholder = 'API key (optional)';
+    const localShow = el('button', 'btn', '[ SHOW ]');
+    localShow.type = 'button';
+    localShow.addEventListener('click', () => {
+      localKey.type = localKey.type === 'password' ? 'text' : 'password';
+      localShow.textContent = localKey.type === 'password' ? '[ SHOW ]' : '[ HIDE ]';
+    });
+    localKeyWrap.appendChild(localKey);
+    localKeyWrap.appendChild(localShow);
     localFields.appendChild(nameL);
     localFields.appendChild(url);
     localFields.appendChild(type);
+    localFields.appendChild(localKeyWrap);
 
     const cloudFields = el('div', 'add-fields hidden');
     const presetSel = el('select', 'add-input');
@@ -439,7 +453,13 @@
           await api('/api/providers', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name: nameL.value, base_url: url.value, type: type.value, kind: 'local' }),
+            body: JSON.stringify({
+              name: nameL.value,
+              base_url: url.value,
+              type: type.value,
+              kind: 'local',
+              api_key: localKey.value || undefined,
+            }),
           });
         }
         rerender();
