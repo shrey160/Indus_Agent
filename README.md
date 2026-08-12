@@ -14,7 +14,7 @@ Everything local, one OpenAI-compatible wire protocol, one docker compose up.
 
 ## Features
 
-- **Local provider detection** — auto-discovers Ollama and LM Studio on the host (fast parallel probe, cached); add/remove custom OpenAI-compatible endpoints.
+- **Local provider detection** — auto-discovers Ollama and LM Studio on the host (fast parallel probe, cached); add/remove custom OpenAI-compatible endpoints, including authenticated ones (e.g. Unsloth Desktop) with an optional encrypted API key.
 - **Streaming chat** — token-by-token SSE streaming through the Node proxy, visible reasoning stream, stop-generation.
 - **Persistent history** — conversations and messages survive restarts in Postgres.
 - **Cloud providers** — OpenRouter / OpenAI / Groq / Together presets, validate-before-save, encrypted API keys, per-reply cost, free-model chips, pinned favorites.
@@ -141,6 +141,22 @@ Containers reach LLM servers on the host via `host.docker.internal`. Both Ollama
 
 > **Warning:** binding `0.0.0.0` exposes the LLM server to your LAN. Restrict with a firewall if unwanted.
 
+### Authenticated local servers (e.g. Unsloth Desktop)
+
+Some local OpenAI-compatible servers require an API key. Unsloth Desktop, for example, runs on `http://127.0.0.1:8888/v1` and returns `401` without a key:
+
+1. Open **Providers** → `[ + ADD PROVIDER ]` → keep **`(•) Local endpoint`**.
+2. Enter a name (e.g. `Unsloth Desktop`), the URL or port (`8888`, or `http://127.0.0.1:8888/v1`), and type `openai`.
+3. Paste the key into the optional **API key** field → `[ SAVE ]`. The key is validated before saving and stored **Fernet-encrypted** — only a hint like `sk-uns····70c7` ever reaches the UI or logs.
+4. Keyed local cards show `key sk-uns····70c7` and an `[ EDIT KEY ]` button.
+
+Two conveniences make pasting your server's URL verbatim "just work":
+
+- `127.0.0.1` / `localhost` hosts are rewritten to `host.docker.internal` (containers cannot reach the host's loopback directly).
+- A trailing `/v1` is stripped — the app appends `/v1` to the subpaths itself.
+
+> **Note:** check the server's model list for non-chat entries (speech/ASR, embeddings). The background role-picker (memory extraction, titles, research) skips those automatically, and you shouldn't activate them for chat either.
+
 ## Usage
 
 1. Open **http://localhost:3000**.
@@ -245,6 +261,7 @@ local-ai-hub/
 | `/api/providers/detect` | POST | Force re-detection of local providers |
 | `/api/providers/{id}/models` | GET | List models for a provider |
 | `/api/providers/{id}/activate` | POST | Activate a model |
+| `/api/providers/{id}/key` | PUT | Update the API key (cloud or keyed local providers) |
 | `/api/chat` | POST | SSE stream — `{ "message", "conversation_id"? }` |
 | `/api/conversations` | GET / POST | List / create conversations |
 | `/api/conversations/{id}/messages` | GET | Message history |
@@ -269,6 +286,7 @@ local-ai-hub/
 | Symptom | Fix |
 |---------|-----|
 | Provider shows `down` / `provider unreachable` | Ollama/LM Studio must bind to `0.0.0.0` (see above) and be running. |
+| A key-gated local server shows `down` / `invalid API key` | The server requires auth (e.g. Unsloth Desktop) — add it with the API key field in `[ + ADD PROVIDER ]`. |
 | `no_model` on chat | No model activated yet — activate one in the Providers section first. |
 | `provider_down` on chat | Activated provider is not responding; re-detect (F5). |
 | First reply is very slow | Normal — the model is loading into memory. Keep it activated. |
