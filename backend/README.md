@@ -38,6 +38,7 @@ backend/
     manager.py       — discovery, session lifecycle, reconnect
   tools_registry.py    — MCP tool registry (enabled/healthy gating, KNOWN_TOOLS fallback)
   rag/                 — document upload → chunk → embed → pgvector
+  dataset.py           — GET /api/dataset/export (conversations → JSONL ShareGPT for fine-tuning)
   memory/              — soul file, fact extraction, budgeted memory injection
   research/            — deep-research runner (planner/researcher/writer/verifier)
   retention.py         — archive old conversations
@@ -68,6 +69,7 @@ POST /api/documents               — upload (multipart), GET list, GET/DELETE/{
 GET  /api/memories                — fact memory (q=, category=)
 GET/PUT /api/soul                 — persona file
 GET  /api/tools / /api/tools/{name}/toggle|test   — MCP tools
+GET  /api/dataset/export — conversations as ShareGPT JSONL (?exclude_tools=, &min_turns=)
 GET  /api/settings/retention ─ PUT — retention control (or null)
 GET  /api/export / POST /api/import — backup/restore (tar.gz)
 GET  /api/research*               — deep-research runs, SSE stream, cancel/resume/report

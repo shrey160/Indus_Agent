@@ -23,6 +23,7 @@ Everything local, one OpenAI-compatible wire protocol, one docker compose up.
 - **Document RAG** — upload PDF/MD/TXT files; chunked, embedded with Ollama `nomic-embed-text`, stored in pgvector, cited automatically in replies.
 - **Deep research** — plan → search → read → reflect → write → verify pipelines that produce cited markdown reports (quick / standard / deep presets).
 - **Zero-dependency frontend** — vanilla JS, no build step, Bloomberg-terminal-style UI with a keyboard-driven F-key bar.
+- **Dataset export** — download all conversations as JSONL (ShareGPT format) for fine-tuning (e.g. Unsloth): `── DATASET ──` in F11 Settings, with tool-chat exclusion and a minimum-turn filter.
 
 ## Architecture
 
@@ -194,6 +195,18 @@ Long-form, citation-backed reports: the app plans sub-questions, searches the we
 
 Runs execute sequentially and never cancel on disconnect — reconnect to the SSE stream with `last_event_id` for a gapless replay. Failures are terminal states with error events, never crashes.
 
+## Dataset export (fine-tuning)
+
+Export every conversation as a fine-tuning dataset: F11 → `── DATASET ──` → optionally toggle `EXCLUDE TOOL CHATS` (skips conversations whose assistant turns used tools) and set a MIN TURNS floor (default 2) → `[ DOWNLOAD .JSONL ]`.
+
+Each line is ShareGPT-format JSON — ready for `load_dataset("json", data_files=...)` in Unsloth/TRL:
+
+```json
+{"conversations": [{"from": "human", "value": "…"}, {"from": "gpt", "value": "…"}]}
+```
+
+Only user/assistant message content is exported — never reasoning, sources, tool payloads, costs, or API keys. Equivalent: `curl localhost:8000/api/dataset/export?exclude_tools=true&min_turns=2`.
+
 ## Cloud providers (OpenRouter, OpenAI, Groq, Together)
 
 1. Open **Providers** → `[ + ADD PROVIDER ]` → select **`(•) Cloud API`**.
@@ -277,6 +290,7 @@ Each major directory ships its own `README.md` — read those for per-module det
 | `/api/tools` | GET | List MCP tools with health + enabled state |
 | `/api/tools/{name}/toggle` | POST | Enable / disable a tool |
 | `/api/tools/{name}/test` | POST | Run a tool with `{ "args": {...} }` |
+| `/api/dataset/export` | GET | Conversations as JSONL ShareGPT (`?exclude_tools=&min_turns=`), for fine-tuning |
 | `/api/research` | POST / GET | Start a run / list runs |
 | `/api/research/{run_id}/stream` | GET | SSE event stream (`?last_event_id=`) |
 | `/api/research/{run_id}/cancel` | POST | Cancel a running run |
