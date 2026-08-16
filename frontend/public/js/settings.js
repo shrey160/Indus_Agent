@@ -4,6 +4,8 @@ window.Settings = (() => {
   let includeKeys = false;
   let importFile = null;
   let retentionMonths = null;
+  let excludeTools = true;
+  let minTurns = 2;
 
   function summary() {
     return '';
@@ -139,6 +141,96 @@ window.Settings = (() => {
     importBtn.addEventListener('click', confirmImport);
     actions.appendChild(importBtn);
     block.appendChild(actions);
+    return block;
+  }
+
+  function datasetToggleLabel() {
+    return excludeTools ? '[ EXCLUDE TOOL CHATS ON ▸]' : '[◂ OFF ]';
+  }
+
+  async function doDatasetDownload(btn) {
+    btn.disabled = true;
+    try {
+      const res = await fetch(
+        '/api/dataset/export?exclude_tools=' + excludeTools + '&min_turns=' + minTurns
+      );
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { detail = (await res.json()).detail || detail; } catch (e) { /* keep */ }
+        throw new Error(detail);
+      }
+      const blob = await res.blob();
+      let filename = 'local-ai-hub-dataset.jsonl';
+      const cd = res.headers.get('content-disposition') || '';
+      const match = cd.match(/filename="?([^";]+)"?/);
+      if (match) filename = match[1];
+      const url = URL.createObjectURL(blob);
+      const a = el('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      if (blob.size === 0) {
+        toast('DATASET EMPTY — NO CONVERSATIONS MATCH', 'warn');
+      } else {
+        toast('DATASET READY — ' + filename, 'ok');
+      }
+    } catch (err) {
+      toast('DATASET FAILED — ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function datasetBlock() {
+    const block = el('div');
+    block.appendChild(el('div', 'memory-divider', '── DATASET ──'));
+    const row = el('div', 'docs-toolbar');
+    const toggle = el('button', 'btn' + (excludeTools ? ' btn-primary' : ''), datasetToggleLabel());
+    toggle.title = 'Skip conversations whose assistant turns used tools (tool_events)';
+    toggle.addEventListener('click', () => {
+      excludeTools = !excludeTools;
+      render();
+    });
+    row.appendChild(toggle);
+    row.appendChild(el('span', 'tool-desc', 'EXCLUDE TOOL CHATS'));
+    block.appendChild(row);
+    const minRow = el('div', 'docs-toolbar');
+    minRow.appendChild(el('span', 'tool-desc', 'MIN TURNS'));
+    const input = el('input', 'add-input settings-min-turns-input');
+    input.type = 'number';
+    input.min = '2';
+    input.placeholder = '2';
+    input.value = String(minTurns);
+    input.style.width = '4.5rem';
+    input.addEventListener('blur', () => {
+      const raw = input.value.trim();
+      let n = 2;
+      if (raw !== '') {
+        n = Number(raw);
+        if (!Number.isInteger(n) || n < 2) {
+          toast('MIN TURNS MUST BE >= 2', 'error');
+          input.value = String(minTurns);
+          return;
+        }
+      }
+      minTurns = n;
+      input.value = String(minTurns);
+    });
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') input.blur();
+    });
+    minRow.appendChild(input);
+    block.appendChild(minRow);
+    const actions = el('div', 'provider-actions');
+    const dlBtn = el('button', 'btn btn-primary', '[ DOWNLOAD .JSONL ]');
+    dlBtn.title = 'ShareGPT-format JSONL for fine-tuning (Unsloth/HF datasets)';
+    dlBtn.addEventListener('click', () => doDatasetDownload(dlBtn));
+    actions.appendChild(dlBtn);
+    block.appendChild(actions);
+    block.appendChild(el('div', 'tool-desc', 'ONLY USER + ASSISTANT CONTENT — NO SOURCES / REASONING / KEYS'));
     return block;
   }
 
@@ -304,6 +396,7 @@ window.Settings = (() => {
     await loadRetention();
     root.appendChild(backupBlock());
     root.appendChild(restoreBlock());
+    root.appendChild(datasetBlock());
     root.appendChild(housekeepingBlock());
     root.appendChild(await aboutBlock());
   }

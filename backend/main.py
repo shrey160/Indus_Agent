@@ -11,6 +11,7 @@ from pydantic import BaseModel
 import db
 from backup import router as backup_router
 from chat.router import router as chat_router
+from dataset import router as dataset_router
 from memory.router import router as memory_router
 from mcp_client import manager as mcp_manager
 from providers.router import router as providers_router
@@ -74,6 +75,7 @@ app.add_middleware(
 
 app.include_router(providers_router)
 app.include_router(chat_router)
+app.include_router(dataset_router)
 app.include_router(memory_router)
 app.include_router(rag_router)
 app.include_router(tools_router)
