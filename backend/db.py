@@ -75,6 +75,9 @@ DDL: list[str] = [
     "ALTER TABLE providers ADD COLUMN IF NOT EXISTS api_key_enc BYTEA",
     "ALTER TABLE providers ADD COLUMN IF NOT EXISTS key_hint TEXT",
     "ALTER TABLE messages ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(10,6)",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS sources JSONB",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_events JSONB",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS reasoning TEXT",
     """
     CREATE TABLE IF NOT EXISTS provider_favorites (
         provider_id INT REFERENCES providers(id) ON DELETE CASCADE,

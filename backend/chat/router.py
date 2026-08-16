@@ -110,6 +110,8 @@ async def chat(body: ChatRequest):
         full = ""
         final_text = None
         sources: list[dict] = []
+        tool_log: list[dict] = []
+        reasoning_full = ""
         usage = None
         is_cloud = provider_row["kind"] == "cloud"
         try:
@@ -118,6 +120,7 @@ async def chat(body: ChatRequest):
             ):
                 etype = event["type"]
                 if etype == "reasoning":
+                    reasoning_full += event["text"]
                     yield sse({"reasoning": event["text"]})
                 elif etype == "content":
                     full += event["text"]
@@ -125,7 +128,34 @@ async def chat(body: ChatRequest):
                 elif etype == "usage":
                     usage = event["usage"]
                 elif etype == "tool":
-                    yield sse({"tool": event["tool"]})
+                    tool_event = event["tool"]
+                    if tool_event.get("status") == "running":
+                        tool_log.append(
+                            {
+                                "name": tool_event["name"],
+                                "args": tool_event.get("args"),
+                                "status": "running",
+                            }
+                        )
+                    elif tool_event.get("status") == "done":
+                        done = {
+                            "name": tool_event["name"],
+                            "status": "done",
+                            "latency_ms": tool_event.get("latency_ms"),
+                            "result_preview": tool_event.get("result_preview"),
+                            "error": tool_event.get("error"),
+                        }
+                        merged = False
+                        for entry in reversed(tool_log):
+                            if entry.get("name") == tool_event["name"]:
+                                entry.update(done)
+                                merged = True
+                                break
+                        if not merged and tool_log:
+                            tool_log[0].update(done)
+                        elif not tool_log:
+                            tool_log.append(done)
+                    yield sse({"tool": tool_event})
                 elif etype == "tool_limit":
                     yield sse({"tool_limit": event["detail"]})
                 elif etype == "final":
@@ -137,14 +167,17 @@ async def chat(body: ChatRequest):
                 cost = registry.cost_for(provider_row["id"], model, usage)
                 message_id = await db.fetchval(
                     """
-                    INSERT INTO messages (conversation_id, role, content, model, cost_usd)
-                    VALUES ($1, 'assistant', $2, $3, $4)
+                    INSERT INTO messages (conversation_id, role, content, model, cost_usd, sources, tool_events, reasoning)
+                    VALUES ($1, 'assistant', $2, $3, $4, $5, $6, $7)
                     RETURNING id
                     """,
                     conversation_id,
                     full,
                     model,
                     cost,
+                    json.dumps(sources),
+                    json.dumps(tool_log),
+                    reasoning_full,
                 )
                 schedule_extraction(body.message, full, message_id)
             raise
@@ -171,14 +204,17 @@ async def chat(body: ChatRequest):
             cost = registry.cost_for(provider_row["id"], model, usage)
             message_id = await db.fetchval(
                 """
-                INSERT INTO messages (conversation_id, role, content, model, cost_usd)
-                VALUES ($1, 'assistant', $2, $3, $4)
+                INSERT INTO messages (conversation_id, role, content, model, cost_usd, sources, tool_events, reasoning)
+                VALUES ($1, 'assistant', $2, $3, $4, $5, $6, $7)
                 RETURNING id
                 """,
                 conversation_id,
                 reply,
                 model,
                 cost,
+                json.dumps(sources),
+                json.dumps(tool_log),
+                reasoning_full,
             )
             schedule_extraction(body.message, reply, message_id)
             msg_count = await db.fetchval(
@@ -260,13 +296,21 @@ async def delete_conversation(conversation_id: int) -> dict:
 async def conversation_messages(conversation_id: int) -> list[dict]:
     rows = await db.fetch(
         """
-        SELECT role, content, model, created_at FROM messages
+        SELECT role, content, model, created_at, sources, tool_events, reasoning
+        FROM messages
         WHERE conversation_id = $1
         ORDER BY id
         """,
         conversation_id,
     )
-    return [dict(row) for row in rows]
+    result = []
+    for row in rows:
+        item = dict(row)
+        for key in ("sources", "tool_events"):
+            value = item.get(key)
+            item[key] = json.loads(value) if value else None
+        result.append(item)
+    return result
 
 
 @router.post("/conversations", status_code=201)

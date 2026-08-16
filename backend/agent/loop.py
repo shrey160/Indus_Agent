@@ -14,6 +14,7 @@ from .fallback_parser import parse_tool_calls
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 4
+MAX_TOOL_CALLS = 10
 TOOL_TIMEOUT_S = 30.0
 
 CITE_INSTRUCTION = "Cite sources using [n] when using <context> or rag.search results."
@@ -126,6 +127,7 @@ async def run(
     sources: list[dict] = []
     seen_urls: set[str] = set()
     iterations = 0
+    calls_done = 0
 
     while True:
         text = ""
@@ -199,6 +201,9 @@ async def run(
 
         fallback_results: list[str] = []
         for i, call in enumerate(calls):
+            if calls_done >= MAX_TOOL_CALLS:
+                break
+            calls_done += 1
             name = name_map.get(call.get("name") or "", call.get("name") or "")
             args = call.get("arguments") or {}
             yield {"type": "tool", "tool": {"name": name, "args": args, "status": "running"}}
@@ -255,4 +260,5 @@ async def run(
             else:
                 fallback_results.append(f"Tool result for {name}:\n{json.dumps(payload)}")
         if not native_tools:
-            convo.append({"role": "user", "content": "\n\n".join(fallback_results)})
+            if fallback_results:
+                convo.append({"role": "user", "content": "\n\n".join(fallback_results)})

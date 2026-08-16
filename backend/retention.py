@@ -56,7 +56,8 @@ async def archive_old_conversations() -> dict:
     conv_ids = [row["id"] for row in conv_rows]
     msg_rows = await db.fetch(
         """
-        SELECT id, conversation_id, role, content, model, created_at, cost_usd
+        SELECT id, conversation_id, role, content, model, created_at, cost_usd,
+               sources, tool_events, reasoning
         FROM messages
         WHERE conversation_id = ANY($1::int[])
         ORDER BY id
@@ -75,6 +76,9 @@ async def archive_old_conversations() -> dict:
         item["created_at"] = item["created_at"].isoformat()
         if item["cost_usd"] is not None:
             item["cost_usd"] = float(item["cost_usd"])
+        for key in ("sources", "tool_events"):
+            value = item.get(key)
+            item[key] = json.loads(value) if value else None
         messages.append(item)
 
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
