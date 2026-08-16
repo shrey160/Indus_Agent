@@ -231,12 +231,12 @@ local-ai-hub/
   compose.yaml               # production (5 services)
   compose.dev.yaml           # dev overrides (live reload)
   .env / .env.example        # secrets + example (never commit .env)
-  data/                      # bind-mounted to api at /data
+  data/                      # bind-mounted to api at /data (see data/README.md)
     soul.md                  # assistant persona (auto-created; gitignored)
     soul.example.md          # distributable persona template
     docs/                    # uploaded documents (gitignored)
     research/                # generated research reports
-  backend/                   # FastAPI app (python:3.12-slim)
+  backend/                   # FastAPI (python:3.12-slim) — see backend/README.md
     main.py                  # app factory, routers, startup DDL
     db.py                    # asyncpg pool, schema bootstrap
     providers/               # registry, Ollama + OpenAI-compat drivers
@@ -246,12 +246,16 @@ local-ai-hub/
     rag/                     # chunking, embeddings, retrieval
     memory/                  # fact extraction + memory injection
     research/                # deep-research job pipeline
-  mcp_servers/toolbox/       # FastMCP tool server (web, arxiv, rag)
-  searxng/                   # SearXNG settings (internal port 8080)
-  frontend/                  # zero-dep Node static server + proxy
+  mcp_servers/               # MCP tool servers — see mcp_servers/README.md
+    toolbox/                 # FastMCP tool server (web, arxiv, rag) — see toolbox/README.md
+  searxng/                  # SearXNG settings (internal port 8080) — see searxng/README.md
+  frontend/                  # zero-dep Node static server + proxy — see frontend/README.md
     server.js
     public/                  # index.html, css/, js/
 ```
+
+Each major directory ships its own `README.md` — read those for per-module details
+(backend endpoints + agent-loop constants, frontend JS/CSS map, toolbox tools, data layout).
 
 ## API reference
 

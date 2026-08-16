@@ -13,9 +13,9 @@ from .fallback_parser import parse_tool_calls
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ITERATIONS = 4
-MAX_TOOL_CALLS = 10
-TOOL_TIMEOUT_S = 30.0
+MAX_TOOL_ITERATIONS = 5
+MAX_TOOL_CALLS = 15
+TOOL_TIMEOUT_S = 10.0
 
 CITE_INSTRUCTION = "Cite sources using [n] when using <context> or rag.search results."
 
