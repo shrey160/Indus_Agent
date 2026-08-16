@@ -46,6 +46,24 @@ window.Chat = (() => {
     chip.content.textContent = bits.join(' · ');
   }
 
+  function toolChip(tool) {
+    const icon = TOOL_ICONS[tool.name] || '🔧';
+    const base = icon + ' ' + tool.name + argSummary(tool.args);
+    const bits = [base];
+    if (tool.error) {
+      bits.push('failed: ' + tool.error);
+    } else {
+      const p = tool.result_preview;
+      if (p && Array.isArray(p.results)) bits.push(p.results.length + ' results');
+      if (tool.latency_ms != null) bits.push(tool.latency_ms + 'ms');
+    }
+    const contentEl = addLog('TOOL', 'role-tool', bits.join(' · '));
+    const line = contentEl.closest('.log-line');
+    line.classList.add('line-tool');
+    if (tool.error) line.classList.add('chip-err');
+    contentEl.addEventListener('click', () => contentEl.classList.toggle('expanded'));
+  }
+
   function sysLine(stream, text) {
     const { line } = logLine('SYS', 'role-sys', text);
     messagesEl.insertBefore(line, stream.line);
@@ -693,8 +711,19 @@ window.Chat = (() => {
           if (m.role === 'user') {
             addLog('USER', 'role-user', m.content);
           } else {
+            if (m.tool_events && m.tool_events.length) {
+              for (const ev of m.tool_events) toolChip(ev);
+            }
             const content = addLog('HUB', 'role-hub');
-            content.appendChild(window.MD.render(m.content));
+            if (m.reasoning) {
+              content.appendChild(el('div', 'log-reasoning', m.reasoning));
+            }
+            const bodyEl = window.MD.render(m.content);
+            content.appendChild(bodyEl);
+            if (m.sources && m.sources.length) {
+              linkifyCitations(bodyEl, m.sources);
+              content.appendChild(sourcesBlock(m.sources));
+            }
             if (m.model) {
               content.appendChild(el('div', 'log-meta', m.model));
             }
