@@ -227,7 +227,7 @@ async def list_conversations() -> list[dict]:
         LEFT JOIN messages m ON m.conversation_id = c.id
         GROUP BY c.id
         ORDER BY c.id DESC
-        LIMIT 50
+        LIMIT 200
         """
     )
     return [dict(row) for row in rows]
