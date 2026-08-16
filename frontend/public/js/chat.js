@@ -283,7 +283,7 @@ window.Chat = (() => {
     const { line, content } = logLine('HUB', 'role-hub');
     const thinking = el('span', 'log-thinking', 'thinking…');
     const reasoning = el('div', 'log-reasoning hidden');
-    const body = el('span', 'log-body');
+    const body = el('div', 'log-body');
     const cursor = el('span', 'log-cursor', '▋');
     content.appendChild(thinking);
     content.appendChild(reasoning);
@@ -413,7 +413,7 @@ window.Chat = (() => {
             stream.thinking.classList.add('hidden');
             if (firstTokenAt === null) firstTokenAt = performance.now();
             accumulated += payload.delta;
-            stream.body.textContent = accumulated;
+            window.MD.renderInto(stream.body, accumulated);
             maybeScroll(was);
           } else if (payload.reasoning) {
             stream.thinking.classList.add('hidden');
@@ -443,8 +443,9 @@ window.Chat = (() => {
           } else if (payload.error === 'stream_interrupted') {
             stream.thinking.classList.add('hidden');
             stream.cursor.remove();
-            stream.body.textContent = accumulated + (accumulated ? '\n' : '') +
-              '[stream interrupted' + (payload.detail ? ': ' + payload.detail : '') + ']';
+            window.MD.renderInto(stream.body, accumulated);
+            stream.body.appendChild(el('span', 'log-interrupt',
+              '[stream interrupted' + (payload.detail ? ': ' + payload.detail : '') + ']'));
             const retry = el('button', 'btn', '[ \u27F3 RETRY ]');
             retry.addEventListener('click', () => { send(message); });
             const actions = el('div', 'log-actions');
@@ -499,7 +500,8 @@ window.Chat = (() => {
       stream.thinking.classList.add('hidden');
       stream.cursor.remove();
       if (err.name === 'AbortError') {
-        stream.body.textContent = accumulated + (accumulated ? '\n' : '') + '[stopped]';
+        window.MD.renderInto(stream.body, accumulated);
+        stream.body.appendChild(el('span', 'log-interrupt', '[stopped]'));
       } else {
         stream.line.remove();
         addErrLine('request failed: ' + err.message, false);
@@ -691,7 +693,8 @@ window.Chat = (() => {
           if (m.role === 'user') {
             addLog('USER', 'role-user', m.content);
           } else {
-            const content = addLog('HUB', 'role-hub', m.content);
+            const content = addLog('HUB', 'role-hub');
+            content.appendChild(window.MD.render(m.content));
             if (m.model) {
               content.appendChild(el('div', 'log-meta', m.model));
             }

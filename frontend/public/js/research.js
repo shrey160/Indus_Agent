@@ -716,129 +716,15 @@ window.Research = (() => {
     }, 0);
   }
 
-  const INLINE_RE = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\[\d+\])/g;
-
-  function inlineInto(parent, text) {
-    const parts = String(text).split(INLINE_RE);
-    for (const part of parts) {
-      if (!part) continue;
-      let m = part.match(/^\*\*([^*]+)\*\*$/);
-      if (m) { parent.appendChild(el('strong', 'md-bold', m[1])); continue; }
-      m = part.match(/^\*([^*]+)\*$/);
-      if (m) { parent.appendChild(el('em', 'md-em', m[1])); continue; }
-      m = part.match(/^`([^`]+)`$/);
-      if (m) { parent.appendChild(el('code', 'md-code-inline', m[1])); continue; }
-      m = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      if (m) {
-        const a = el('a', 'md-link', m[1]);
-        a.href = m[2];
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        parent.appendChild(a);
-        continue;
-      }
-      m = part.match(/^\[(\d+)\]$/);
-      if (m) {
-        const idx = parseInt(m[1], 10);
-        const sup = el('sup', 'cite md-cite', part);
-        sup.addEventListener('click', (ev) => {
-          const src = ((lastView && lastView.sources) || []).find((s) => s.n === idx);
-          if (src) citePopover(src, ev.target.getBoundingClientRect());
-        });
-        parent.appendChild(sup);
-        continue;
-      }
-      parent.appendChild(document.createTextNode(part));
-    }
-  }
-
-  function inlineEl(tag, cls, text) {
-    const node = el(tag, cls);
-    inlineInto(node, text);
-    return node;
-  }
+  /* ── report view (T4): markdown via the shared window.MD allowlist renderer ── */
 
   function renderMarkdown(text) {
-    const container = el('div', 'md-render');
-    const lines = String(text).split('\n');
-    let para = null;
-    let listEl = null;
-    let fence = null;
-    const flushPara = () => { if (para) { container.appendChild(para); para = null; } };
-    const flushList = () => { if (listEl) { container.appendChild(listEl); listEl = null; } };
-    for (const raw of lines) {
-      const line = raw;
-      if (fence !== null) {
-        if (/^```/.test(line)) {
-          flushPara();
-          fence = null;
-        } else {
-          fence.textContent += (fence.textContent ? '\n' : '') + line;
-        }
-        continue;
-      }
-      if (/^```/.test(line)) {
-        flushPara();
-        flushList();
-        fence = el('pre', 'md-code');
-        container.appendChild(fence);
-        continue;
-      }
-      if (/^(---|\*\*\*)\s*$/.test(line)) {
-        flushPara();
-        flushList();
-        container.appendChild(el('div', 'md-hr'));
-        continue;
-      }
-      if (/^###\s/.test(line)) {
-        flushPara();
-        flushList();
-        container.appendChild(inlineEl('h3', 'md-h3', line.replace(/^###\s*/, '')));
-        continue;
-      }
-      if (/^##\s/.test(line)) {
-        flushPara();
-        flushList();
-        container.appendChild(inlineEl('h2', 'md-h2', line.replace(/^##\s*/, '')));
-        continue;
-      }
-      if (/^#\s/.test(line)) {
-        flushPara();
-        flushList();
-        container.appendChild(inlineEl('h1', 'md-h1', line.replace(/^#\s*/, '')));
-        continue;
-      }
-      if (/^\s*[-*]\s+/.test(line)) {
-        flushPara();
-        if (!listEl) { listEl = el('ul', 'md-list'); container.appendChild(listEl); }
-        const li = el('li');
-        inlineInto(li, line.replace(/^\s*[-*]\s+/, ''));
-        listEl.appendChild(li);
-        continue;
-      }
-      if (/^\s*\d+[.)]\s+/.test(line)) {
-        flushPara();
-        if (!listEl) { listEl = el('ol', 'md-list'); container.appendChild(listEl); }
-        const li = el('li');
-        inlineInto(li, line.replace(/^\s*\d+[.)]\s+/, ''));
-        listEl.appendChild(li);
-        continue;
-      }
-      if (!line.trim()) {
-        flushPara();
-        flushList();
-        continue;
-      }
-      flushList();
-      if (!para) {
-        para = el('p', 'md-p');
-        container.appendChild(para);
-      }
-      inlineInto(para, line);
-    }
-    flushPara();
-    flushList();
-    return container;
+    return window.MD.render(text, {
+      cite: (sup, idx) => {
+        const src = ((lastView && lastView.sources) || []).find((s) => s.n === idx);
+        if (src) citePopover(src, sup.getBoundingClientRect());
+      },
+    });
   }
 
   function openReportView(runId) {

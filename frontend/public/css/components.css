@@ -1633,6 +1633,76 @@
   cursor: pointer;
 }
 
+/* -- markdown tables & quotes (shared renderer) -- */
+.md-table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: var(--fs-small);
+  max-width: 100%;
+}
+
+.md-table th,
+.md-table td {
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+
+.md-table th {
+  color: var(--text-1);
+  font-weight: 500;
+}
+
+.md-table .md-cell-center {
+  text-align: center;
+}
+
+.md-table .md-cell-right {
+  text-align: right;
+}
+
+.md-quote {
+  border-left: 2px solid var(--amber-dim);
+  padding: 2px 10px;
+  margin: 6px 0;
+  color: var(--text-1);
+}
+
+.md-quote .md-p {
+  margin: 2px 0;
+}
+
+/* chat-log scoping per FRONTEND_DESIGN §5.3: terminal transcript, not a page */
+.log-line .md-render {
+  max-width: none;
+  margin: 0;
+}
+
+.log-line .md-h1,
+.log-line .md-h2,
+.log-line .md-h3 {
+  color: var(--amber);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  margin: 8px 0 4px;
+}
+
+.log-line .md-list {
+  border-left: 1px solid var(--border);
+  padding-left: 12px;
+}
+
+.log-line .md-code {
+  margin: 6px 0;
+}
+
+.log-interrupt {
+  color: var(--red);
+  font-size: var(--fs-small);
+}
+
 @media print {
   body {
     background: #fff !important;
