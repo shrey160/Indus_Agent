@@ -169,6 +169,7 @@ async def _querygen(ctx: dict, task: dict) -> list[str]:
         ])
     except Exception as exc:
         logger.warning("querygen failed for task %s: %s", task["idx"], fmt_err(exc))
+        await _tool_failed(ctx, "llm.querygen", exc)
         return [question]
     parsed = ctx["llm"].extract_json(result["text"])
     queries = []
@@ -431,6 +432,7 @@ async def _extract_notes(
         )
     except Exception as exc:
         logger.warning("notes extraction failed for %s: %s", url, fmt_err(exc))
+        await _tool_failed(ctx, "llm.notes", exc)
         return
     parsed = ctx["llm"].extract_json(result["text"])
     items = parsed if isinstance(parsed, list) else ([parsed] if isinstance(parsed, dict) else [])

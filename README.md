@@ -195,6 +195,8 @@ Long-form, citation-backed reports: the app plans sub-questions, searches the we
 
 Runs execute sequentially and never cancel on disconnect — reconnect to the SSE stream with `last_event_id` for a gapless replay. Failures are terminal states with error events, never crashes.
 
+**Model fallback:** the planner/reflect/report roles use your pinned **SMART MODEL** (or the active chat model); query-gen and per-page note extraction prefer a small **local** model. If no local server is reachable (or one probes slow, e.g. Unsloth Desktop under load), the run falls back to the smart model for those steps too — you'll see one `fast_role` event at run start and `fast_source: smart_fallback` in the metrics. With no model available at all the run fails fast at planning (`no eligible model for smart role`). A failed run with sources but zero notes is labeled `no_notes_extracted`; `insufficient_sources` means zero usable sources (e.g. toolbox down).
+
 ## Dataset export (fine-tuning)
 
 Export every conversation as a fine-tuning dataset: F11 → `── DATASET ──` → optionally toggle `EXCLUDE TOOL CHATS` (skips conversations whose assistant turns used tools) and set a MIN TURNS floor (default 2) → `[ DOWNLOAD .JSONL ]`.

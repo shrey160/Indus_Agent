@@ -48,6 +48,7 @@ def _init_metrics() -> dict:
         "llm_calls": 0,
         "stage_durations_s": {},
         "smart_source": "auto",
+        "fast_source": "local",
     }
 
 
@@ -199,6 +200,22 @@ async def run_pipeline(run_id: str) -> None:
         }
         ctx["metrics"] = _init_metrics()
         ctx["metrics"]["smart_source"] = "user" if smart_override else "auto"
+        if roles["fast"] is None:
+            roles["fast"] = roles["smart"]
+            ctx["metrics"]["fast_source"] = "smart_fallback"
+            await events.append(
+                run_id,
+                "error",
+                {
+                    "stage": "plan",
+                    "tool": "fast_role",
+                    "detail": (
+                        f"no local model for fast role - using smart model "
+                        f"{smart_model} for query-gen/notes"
+                    ),
+                    "retryable": True,
+                },
+            )
         ctx["llm"] = _TrackingLLM(ctx)
         ctx["plan"] = await planner.plan(ctx)
         await _persist_metrics(run_id, ctx, "plan", time.monotonic() - t_stage)
@@ -210,7 +227,10 @@ async def run_pipeline(run_id: str) -> None:
         await _persist_metrics(run_id, ctx, "research", time.monotonic() - t_stage)
         counts = await store.run_counts(run_id)
         if int(counts["notes"]) == 0:
-            detail = "insufficient_sources"
+            if int(counts["sources"]) == 0:
+                detail = "insufficient_sources"
+            else:
+                detail = "no_notes_extracted"
             await events.transition(run_id, "failed", detail=detail)
             await events.append(
                 run_id, "error", {"stage": "research", "detail": detail, "retryable": True}

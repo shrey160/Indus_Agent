@@ -12,7 +12,7 @@ from .ollama import OllamaProvider
 from .openai_compat import OpenAICompatProvider
 
 CACHE_TTL = 30.0
-PROBE_TIMEOUT = 1.5
+PROBE_TIMEOUT = 4.0
 
 _cache_ts = 0.0
 _cache: dict[int, ProviderStatus] = {}

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-PING_TIMEOUT = 1.5
+PING_TIMEOUT = 4.0
 TEST_TIMEOUT = 20.0
 CHAT_TIMEOUT = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=10.0)
 WARMUP_TIMEOUT = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=10.0)
