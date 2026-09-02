@@ -189,9 +189,9 @@ Long-form, citation-backed reports: the app plans sub-questions, searches the we
 
 | Preset | Cap (tasks / iterations / sources per task / tool calls) | Observed wall time |
 |--------|:---:|:---:|
-| QUICK | 3 / 1 / 5 / 20 | ~11 min |
-| STANDARD | 6 / 2 / 8 / 60 | ~15–24 min |
-| DEEP | 10 / 3 / 12 / 120 | ~25-40 min |
+| QUICK | 3 / 1 / 5 / 35 | ~11 min |
+| STANDARD | 6 / 2 / 8 / 80 | ~15–24 min |
+| DEEP | 10 / 3 / 12 / 140 | ~25-40 min |
 
 Runs execute sequentially and never cancel on disconnect — reconnect to the SSE stream with `last_event_id` for a gapless replay. Failures are terminal states with error events, never crashes.
 
