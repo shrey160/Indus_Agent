@@ -28,6 +28,7 @@ window.Research = (() => {
     error: { tag: 'ERR', cls: 'tag-err' },
     plan: { tag: 'PLAN', cls: 'tag-amber' },
     'plan.degraded': { tag: 'PLAN', cls: 'tag-err' },
+    scout: { tag: 'SCOUT', cls: 'tag-amber' },
     'task.start': { tag: 'TASK', cls: '' },
     search: { tag: 'SRCH', cls: 'tag-tool' },
     fetch: { tag: 'FETCH', cls: 'tag-tool' },
@@ -405,6 +406,9 @@ window.Research = (() => {
         return 'task ' + payload.idx + ' iter ' + payload.iteration + ' · ' + (payload.coverage || '');
       case 'plan':
         return (payload.tasks ? payload.tasks.length + ' tasks' : '') + ' · ' + (payload.title || '');
+      case 'scout':
+        return (payload.queries != null ? payload.queries + ' queries' : '') +
+          (payload.results != null ? ' · ' + payload.results + ' usable results' : '');
       case 'report.delta':
         return 'section: ' + (payload.section || '') + ' (' + String(payload.text || '').length + 'c)';
       case 'verify':

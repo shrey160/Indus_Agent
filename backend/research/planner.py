@@ -1,6 +1,8 @@
 """PLAN stage: turn the user query into an orthogonal task plan (smart role).
 
-One LLM call with prompts/plan.md, one retry with a stricter suffix on
+A search-only scout round (scout.gather_context) runs first and its digest is
+appended to the user message, so sub-questions are grounded in real web results
+(SP-Q2). One LLM call with prompts/plan.md, one retry with a stricter suffix on
 unparseable JSON, then MANDATORY degraded fallback (PHASE_9 "Planner degraded
 mode"): a single-task plan beats a failed run. Normalized/clamped plan rows are
 persisted via store.insert_tasks + update_run, and a `plan` event is appended.
@@ -8,7 +10,7 @@ persisted via store.insert_tasks + update_run, and a `plan` event is appended.
 
 import logging
 
-from research import events, llm, store
+from research import events, llm, scout, store
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +73,15 @@ async def plan(ctx: dict) -> dict:
     smart_row, smart_model = ctx["roles"]["smart"]
 
     prompt = llm.load_prompt("plan.md").replace("{max_tasks}", str(max_tasks))
+    digest = None
+    try:
+        digest = await scout.gather_context(ctx)
+    except Exception:
+        logger.exception("scout: unexpected failure — planning from query alone")
+    user_content = query if digest is None else f"{query}\n\n{digest}"
     messages = [
         {"role": "system", "content": prompt},
-        {"role": "user", "content": query},
+        {"role": "user", "content": user_content},
     ]
 
     parsed: dict | None = None

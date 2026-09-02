@@ -195,6 +195,8 @@ Long-form, citation-backed reports: the app plans sub-questions, searches the we
 
 Runs execute sequentially and never cancel on disconnect — reconnect to the SSE stream with `last_event_id` for a gapless replay. Failures are terminal states with error events, never crashes.
 
+**Scout round (planning):** before the planner generates sub-questions, a search-only scout round runs 2–3 fast-role-generated queries through SearXNG and feeds the top titles + snippets into the plan prompt, so tasks are grounded in real entity names and current terminology instead of model priors. You'll see `SCOUT` / `SRCH` lines in the run log before the `PLAN` line. The scout costs 2–3 of the preset's tool-call budget and never fails the run: with SearXNG down (or zero results) the planner falls back to the raw query and the run behaves exactly as before.
+
 **Model fallback:** the planner/reflect/report roles use your pinned **SMART MODEL** (or the active chat model); query-gen and per-page note extraction prefer a small **local** model. If no local server is reachable (or one probes slow, e.g. Unsloth Desktop under load), the run falls back to the smart model for those steps too — you'll see one `fast_role` event at run start and `fast_source: smart_fallback` in the metrics. With no model available at all the run fails fast at planning (`no eligible model for smart role`). A failed run with sources but zero notes is labeled `no_notes_extracted`; `insufficient_sources` means zero usable sources (e.g. toolbox down).
 
 ## Dataset export (fine-tuning)
