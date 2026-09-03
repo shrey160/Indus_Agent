@@ -172,11 +172,21 @@ Two conveniences make pasting your server's URL verbatim "just work":
 Upload PDF, Markdown, or plain-text files, then ask questions about them. Files are chunked, embedded with the host Ollama (`nomic-embed-text`), and stored as vectors in Postgres; the assistant cites sources inline — click the `[1]` superscript to see the file name and snippet.
 
 1. Open the **Documents** sidebar section or press **F9**.
-2. Drag a file onto the chat area, or click **UPLOAD** (≤ 50 MB, `.pdf` / `.md` / `.txt`).
+2. Click **UPLOAD** (≤ 50 MB, `.pdf` / `.md` / `.txt`) — dragging a file onto the chat area now *attaches it to your message* instead (see below).
 3. Watch the status badge: `pending` → `processing` → `ready`.
 4. Ask your question. When the model uses context you'll see cyan `[n]` citations.
 
 The `[ AUTO ]` toggle controls automatic retrieval for every message; the model can still call `rag.search` explicitly, and ad-hoc notes can be indexed without a file via the `rag.ingest` tool in the Tools section (`text` + `title`).
+
+## Attach files to chat
+
+Attach documents directly to a chat message: click **`[ FILE ]`** above the composer or **drag files onto the chat area**. Attachments show as chips (`name · size · chars [×]`) before sending and under your message in the history.
+
+- **Supported:** `.txt` / `.md` / `.pdf` / `.docx` — text is extracted server-side (`/api/extract`) before the message is sent; images and scanned pages are not OCR'd (PDFs with image-only pages report them as warnings).
+- **Caps:** 5 files per message, 20 MB per file, 12,000 extracted characters per file (longer text is kept head+tail with a `[TRUNCATED …]` marker). Configurable — see the configuration reference (`ATTACH_*`).
+- **Context window:** only the last **2** attachment turns (`ATTACH_REINJECT_TURNS`) re-inject their full text into new prompts; older attached files stay visible in history as `[ATTACHED FILE: name]` stubs.
+- **Hygiene:** your typed message stays the retrieval/memory key — extraction never leaks into memories, titles, or the fine-tuning export; only the typed text is stored as message content (extracted text lives in a jsonb column).
+- A message may be sent **with attachments and no typed text**; a completely empty message without attachments is rejected.
 
 ## Deep research
 
@@ -198,6 +208,8 @@ Runs execute sequentially and never cancel on disconnect — reconnect to the SS
 **Scout round (planning):** before the planner generates sub-questions, a search-only scout round runs 2–3 fast-role-generated queries through SearXNG and feeds the top titles + snippets into the plan prompt, so tasks are grounded in real entity names and current terminology instead of model priors. You'll see `SCOUT` / `SRCH` lines in the run log before the `PLAN` line. The scout costs 2–3 of the preset's tool-call budget and never fails the run: with SearXNG down (or zero results) the planner falls back to the raw query and the run behaves exactly as before.
 
 **Model fallback:** the planner/reflect/report roles use your pinned **SMART MODEL** (or the active chat model); query-gen and per-page note extraction prefer a small **local** model. If no local server is reachable (or one probes slow, e.g. Unsloth Desktop under load), the run falls back to the smart model for those steps too — you'll see one `fast_role` event at run start and `fast_source: smart_fallback` in the metrics. With no model available at all the run fails fast at planning (`no eligible model for smart role`). A failed run with sources but zero notes is labeled `no_notes_extracted`; `insufficient_sources` means zero usable sources (e.g. toolbox down).
+
+**Attached documents (seed prompts):** the run modal has a **`── DOCS ──`** block — attach up to 5 files (same extraction rules as chat attachments, e.g. a `seed-prompt.md` with detailed instructions). Documents are **one-time inputs** for that run: they are stored alongside the run, feed the planner (as the primary directive — a vague query like "follow the given instructions" plans from the document), ground the scout's search queries, and always land as `from user document <name>` notes *before* any web source is fetched (even if the tool budget is already exhausted, or the fast model extracts nothing). As soon as the run reaches a terminal state (done / failed / cancelled) the document text is **deleted** from the database; `interrupted` runs keep it so RESUME can still use it. Completed run cards show a ` · N docs` badge.
 
 ## Dataset export (fine-tuning)
 
@@ -236,6 +248,10 @@ Python edits trigger uvicorn reload, `server.js` edits restart Node, static file
 | `SECRET_KEY` | yes | Fernet key — encrypts cloud API keys at rest |
 | `SEARXNG_SECRET` | yes | SearXNG instance secret |
 | `TEST_OPENROUTER_KEY` | optional | OpenRouter key for testing |
+| `ATTACH_MAX_FILES` | optional (default 5) | Max attachments per message / research run |
+| `ATTACH_MAX_BYTES` | optional (default 20971520) | Max size per file in bytes (20 MB) |
+| `ATTACH_MAX_CHARS` | optional (default 12000) | Max extracted characters per file (head+tail truncation) |
+| `ATTACH_REINJECT_TURNS` | optional (default 2) | How many recent attachment turns re-inject full text into chat prompts |
 | `OPENROUTER_ENDPOINT` | optional | Override OpenRouter base URL |
 | `ALLOWED_MODEL_OPENROUTER` | optional | Restrict OpenRouter models during testing |
 
@@ -283,7 +299,8 @@ Each major directory ships its own `README.md` — read those for per-module det
 | `/api/providers/{id}/models` | GET | List models for a provider |
 | `/api/providers/{id}/activate` | POST | Activate a model |
 | `/api/providers/{id}/key` | PUT | Update the API key (cloud or keyed local providers) |
-| `/api/chat` | POST | SSE stream — `{ "message", "conversation_id"? }` |
+| `/api/chat` | POST | SSE stream - `{ "message", "conversation_id"?, "attachments"?: [{name, ext, size, chars, text}] }` |
+| `/api/extract` | POST | Multipart upload -> extracted text + warnings (`413` >20 MB, `400` unsupported type / scanned PDF) |
 | `/api/conversations` | GET / POST | List / create conversations |
 | `/api/conversations/{id}/messages` | GET | Message history |
 | `/api/memories` | GET | List memory facts (`?q=`, `?category=`) |
@@ -295,7 +312,7 @@ Each major directory ships its own `README.md` — read those for per-module det
 | `/api/tools/{name}/toggle` | POST | Enable / disable a tool |
 | `/api/tools/{name}/test` | POST | Run a tool with `{ "args": {...} }` |
 | `/api/dataset/export` | GET | Conversations as JSONL ShareGPT (`?exclude_tools=&min_turns=`), for fine-tuning |
-| `/api/research` | POST / GET | Start a run / list runs |
+| `/api/research` | POST / GET | Start a run / list runs (`docs` on POST: one-time seed documents, deleted at terminal) |
 | `/api/research/{run_id}/stream` | GET | SSE event stream (`?last_event_id=`) |
 | `/api/research/{run_id}/cancel` | POST | Cancel a running run |
 | `/api/research/{run_id}/resume` | POST | Re-queue an `interrupted` or `failed` run |

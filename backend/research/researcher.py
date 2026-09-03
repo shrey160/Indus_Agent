@@ -421,13 +421,15 @@ async def _extract_notes(
     page_text: str,
     note_prefix: str = "",
 ) -> None:
-    """One fast-role call per page -> clamped, stored notes."""
+    """One fast-role call per page -> clamped, stored notes. Returns the
+    number of notes actually stored (0 when fast is None, page empty, LLM
+    failed, or the model extracted nothing)."""
     cfg = ctx["config"]
     run_id = str(ctx["run"]["id"])
     task_id = str(task["id"])
     fast = ctx["roles"].get("fast")
     if fast is None or not page_text.strip():
-        return
+        return 0
     prompt = llm.load_prompt("notes.md")
     prompt = (
         prompt.replace("{question}", task["question"])
@@ -443,9 +445,10 @@ async def _extract_notes(
     except Exception as exc:
         logger.warning("notes extraction failed for %s: %s", url, fmt_err(exc))
         await _tool_failed(ctx, "llm.notes", exc)
-        return
+        return 0
     parsed = ctx["llm"].extract_json(result["text"])
     items = parsed if isinstance(parsed, list) else ([parsed] if isinstance(parsed, dict) else [])
+    stored_count = 0
     for item in items[:MAX_NOTES_PER_PAGE]:
         if not isinstance(item, dict):
             continue
@@ -460,6 +463,8 @@ async def _extract_notes(
         stored = f"{note_prefix}{note}"
         await store.add_note(run_id, task_id, source_id, stored[:NOTE_MAX_CHARS], salience)
         ctx["metrics"]["notes"] += 1
+        stored_count += 1
+    return stored_count
 
 
 async def _docs_pass(ctx: dict, task: dict) -> None:
@@ -471,15 +476,24 @@ async def _docs_pass(ctx: dict, task: dict) -> None:
     docs = ctx.get("docs") or []
     for doc in docs:
         name = str(doc.get("name") or "?")
-        await _extract_notes(
+        doc_text = str(doc.get("text") or "")
+        added = await _extract_notes(
             ctx,
             task,
             None,
             "",
             name,
-            str(doc.get("text") or ""),
+            doc_text,
             note_prefix=f"from user document {name}: ",
         )
+        if added == 0 and doc_text.strip():
+            # Deterministic grounding: the fast model may legitimately extract
+            # zero "facts" from an instructions-only document, but the user's
+            # seed asks must ALWAYS reach the reflect pool — store the doc's
+            # own opening text as one high-salience note.
+            fallback = f"from user document {name}: {doc_text.strip()[:NOTE_MAX_CHARS - 200]}"
+            await store.add_note(str(ctx["run"]["id"]), str(task["id"]), None, fallback, 0.9)
+            ctx["metrics"]["notes"] += 1
 
 
 async def _reflect(ctx: dict, task: dict, iteration: int) -> dict:

@@ -23,19 +23,22 @@ function proxyApi(req, res) {
   const headers = { ...req.headers };
   delete headers.host;
   delete headers.connection;
+  delete headers.expect;
+  delete headers['transfer-encoding'];
   const controller = new AbortController();
   let clientClosed = false;
   res.on('close', () => {
     clientClosed = true;
     controller.abort();
   });
-  fetch(url, {
+  const init = {
     method: req.method,
     headers,
     body: ['GET', 'HEAD'].includes(req.method) ? undefined : req,
     duplex: 'half',
     signal: controller.signal,
-  }).then((upstream) => {
+  };
+  const send = () => fetch(url, init).then((upstream) => {
     if (clientClosed) {
       upstream.body && upstream.body.cancel();
       return;
@@ -54,8 +57,18 @@ function proxyApi(req, res) {
     } else {
       res.end();
     }
-  }).catch((err) => {
+  });
+  // Transient connect refusals (Docker networking races) and stale pooled
+  // keepalive sockets can kill a request; retry idempotent methods on fresh
+  // connections before giving up (streaming POSTs are never retried).
+  const attempt = (n) => send().catch((err) => {
     if (clientClosed) return;
+    if (n <= 1 || !['GET', 'HEAD'].includes(req.method)) throw err;
+    return new Promise((r) => setTimeout(r, 150)).then(() => attempt(n - 1));
+  });
+  attempt(3).catch((err) => {
+    if (clientClosed) return;
+    console.error(`proxy 502 ${req.method} ${req.url}:`, String(err), 'cause:', String(err && err.cause));
     res.writeHead(502, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ error: 'api unreachable', detail: String(err) }));
   });

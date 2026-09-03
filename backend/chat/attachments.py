@@ -99,7 +99,7 @@ def extract_upload(filename: str, data: bytes) -> dict:
         text = data.decode("utf-8", errors="replace")
 
     text = clean_text(text)
-    if len(text.strip()) < MIN_CHARS:
+    if len(text.strip()) == 0:
         raise ValueError(EMPTY_MESSAGE)
     text = truncate_head_tail(text, ATTACH_MAX_CHARS)
 
