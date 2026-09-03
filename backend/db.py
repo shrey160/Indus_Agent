@@ -215,6 +215,18 @@ DDL: list[str] = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS research_events_run ON research_events(run_id, id)",
+    """
+    CREATE TABLE IF NOT EXISTS research_run_docs (
+      id         BIGSERIAL PRIMARY KEY,
+      run_id     UUID NOT NULL REFERENCES research_runs(id) ON DELETE CASCADE,
+      name       TEXT NOT NULL,
+      ext        TEXT NOT NULL,
+      size       BIGINT NOT NULL DEFAULT 0,
+      chars      INT NOT NULL DEFAULT 0,
+      text       TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
 ]
 
 DEFAULT_PROVIDERS = [

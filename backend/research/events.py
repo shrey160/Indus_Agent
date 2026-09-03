@@ -14,6 +14,10 @@ STATUSES = {"queued", "planning", "researching", "writing", "verifying",
             "done", "failed", "cancelled", "interrupted"}
 TERMINAL = {"done", "failed", "cancelled", "interrupted"}
 
+# Purge the run's ephemeral input docs (Phase 10) on these transitions only.
+# `interrupted` is TERMINAL for the FSM/SSE but MUST keep docs so resume works.
+DOCS_PURGE_STATUSES = frozenset({"done", "failed", "cancelled"})
+
 # FSM (PHASE_9 "Runner Internals"). `interrupted` is only entered via boot
 # recovery (force_status), and `interrupted/failed -> queued` only via resume.
 TRANSITIONS: dict[str, set[str]] = {
@@ -68,6 +72,10 @@ async def transition(run_id: str, to_status: str, detail: str | None = None) -> 
                 json.dumps({"status": to_status, "detail": detail}),
             )
             if to_status in TERMINAL:
+                if to_status in DOCS_PURGE_STATUSES:
+                    await conn.execute(
+                        "DELETE FROM research_run_docs WHERE run_id = $1", run_id
+                    )
                 await conn.execute(
                     """
                     UPDATE research_runs
@@ -113,6 +121,10 @@ async def force_status(run_id: str, to_status: str, detail: str | None = None) -
                 json.dumps({"status": to_status, "detail": detail}),
             )
             if to_status in TERMINAL:
+                if to_status in DOCS_PURGE_STATUSES:
+                    await conn.execute(
+                        "DELETE FROM research_run_docs WHERE run_id = $1", run_id
+                    )
                 await conn.execute(
                     """
                     UPDATE research_runs

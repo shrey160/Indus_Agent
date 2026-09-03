@@ -117,12 +117,16 @@ async def research_task(ctx: dict, task: dict) -> None:
     await store.set_task(task_id, "running")
 
     ctx["sources_added"] = 0
+    docs_pending = bool(ctx.get("docs"))
     queries = await _querygen(ctx, task)
     reflect: dict = {}
     iterations = 0
     try:
         while True:
             await _search_and_fetch(ctx, task, queries)
+            if docs_pending and not ctx["budget_hit"]:
+                docs_pending = False
+                await _docs_pass(ctx, task)
             iterations += 1
             ctx["metrics"]["iterations"] += 1
             reflect = await _reflect(ctx, task, iterations)
@@ -409,7 +413,13 @@ async def _rag_pass(ctx: dict, task: dict) -> None:
 
 
 async def _extract_notes(
-    ctx: dict, task: dict, source_id: str, url: str, title: str, page_text: str
+    ctx: dict,
+    task: dict,
+    source_id: str | None,
+    url: str,
+    title: str,
+    page_text: str,
+    note_prefix: str = "",
 ) -> None:
     """One fast-role call per page -> clamped, stored notes."""
     cfg = ctx["config"]
@@ -447,8 +457,29 @@ async def _extract_notes(
         except (TypeError, ValueError):
             salience = 0.5
         salience = min(1.0, max(0.0, salience))
-        await store.add_note(run_id, task_id, source_id, note, salience)
+        stored = f"{note_prefix}{note}"
+        await store.add_note(run_id, task_id, source_id, stored[:NOTE_MAX_CHARS], salience)
         ctx["metrics"]["notes"] += 1
+
+
+async def _docs_pass(ctx: dict, task: dict) -> None:
+    """Feed the run's ephemeral docs through the notes path (source_id=NULL,
+    `from user document <name>` prefix — same convention as _rag_pass).
+    LLM-only: no tool-call budget consumed; llm_calls land in metrics via
+    _TrackingLLM. Never raises — fast is None returns early per doc and LLM
+    failures surface through _tool_failed (llm.notes)."""
+    docs = ctx.get("docs") or []
+    for doc in docs:
+        name = str(doc.get("name") or "?")
+        await _extract_notes(
+            ctx,
+            task,
+            None,
+            "",
+            name,
+            str(doc.get("text") or ""),
+            note_prefix=f"from user document {name}: ",
+        )
 
 
 async def _reflect(ctx: dict, task: dict, iteration: int) -> dict:

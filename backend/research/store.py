@@ -257,6 +257,52 @@ async def get_run_sources(run_id: str) -> list[dict]:
     return [_row_dict(r) for r in rows]
 
 
+async def add_run_docs(run_id: str, docs: list[dict]) -> None:
+    """Store a run's ephemeral input docs (extracted text only, never bytes).
+
+    Rows live until a terminal transition purges them (done/failed/cancelled —
+    NOT interrupted, so resume works); deleting the run cascades here too.
+    chars is recomputed from the cleaned text — client counts are untrusted.
+    """
+    pool = db.get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            for d in docs:
+                text = _db_text(d["text"]) or ""
+                await conn.execute(
+                    """
+                    INSERT INTO research_run_docs (run_id, name, ext, size, chars, text)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    """,
+                    run_id,
+                    _db_text(d["name"]),
+                    d["ext"],
+                    int(d.get("size") or 0),
+                    len(text),
+                    text,
+                )
+
+
+async def get_run_docs(run_id: str) -> list[dict]:
+    rows = await db.fetch(
+        "SELECT * FROM research_run_docs WHERE run_id = $1 ORDER BY id", run_id
+    )
+    return [_row_dict(r) for r in rows]
+
+
+async def delete_run_docs(run_id: str) -> None:
+    await db.execute("DELETE FROM research_run_docs WHERE run_id = $1", run_id)
+
+
+async def count_run_docs(run_id: str) -> int:
+    return int(
+        await db.fetchval(
+            "SELECT count(*) FROM research_run_docs WHERE run_id = $1", run_id
+        )
+        or 0
+    )
+
+
 async def seen_urls(run_id: str) -> set[str]:
     rows = await db.fetch(
         "SELECT url FROM research_sources WHERE run_id = $1", run_id
@@ -282,7 +328,8 @@ async def run_counts(run_id: str) -> dict:
           (SELECT count(*) FROM research_tasks WHERE run_id = $1) AS tasks,
           (SELECT count(*) FROM research_tasks WHERE run_id = $1 AND status = 'done') AS tasks_done,
           (SELECT count(*) FROM research_sources WHERE run_id = $1) AS sources,
-          (SELECT count(*) FROM research_notes WHERE run_id = $1) AS notes
+          (SELECT count(*) FROM research_notes WHERE run_id = $1) AS notes,
+          (SELECT count(*) FROM research_run_docs WHERE run_id = $1) AS docs
         """,
         run_id,
     )

@@ -89,6 +89,7 @@ window.Research = (() => {
     if (counts.tasks) bits.push('task ' + (counts.tasks_done || 0) + '/' + counts.tasks);
     if (counts.sources) bits.push(counts.sources + ' sources');
     if (counts.notes) bits.push(counts.notes + ' notes');
+    if (counts.docs) bits.push(counts.docs + ' docs');
     if (run.model) bits.push(run.model);
     if (bits.length) c.appendChild(el('div', 'research-meta', bits.join(' · ')));
     const open = () => openRunView(run.id);
@@ -195,6 +196,49 @@ window.Research = (() => {
       depthRow.appendChild(b);
     }
     body.appendChild(depthRow);
+
+    /* ── DOCS — one-time run inputs (Phase 10); nothing persists to storage ── */
+    body.appendChild(el('div', 'research-caption', 'DOCS'));
+    const docRow = el('div', 'research-docs-row');
+    const addDocBtn = el('button', 'btn', '[ + DOCS ]');
+    addDocBtn.type = 'button';
+    addDocBtn.title = 'Attach reference documents (used by this run only)';
+    const docInput = el('input');
+    docInput.type = 'file';
+    docInput.accept = '.txt,.md,.pdf,.docx';
+    docInput.multiple = true;
+    docInput.classList.add('hidden');
+    docRow.appendChild(addDocBtn);
+    docRow.appendChild(docInput);
+    body.appendChild(docRow);
+    const docChips = el('div', 'attach-chips');
+    body.appendChild(docChips);
+    const pendingDocs = [];
+
+    addDocBtn.addEventListener('click', () => docInput.click());
+    docInput.addEventListener('change', async () => {
+      const files = Array.from(docInput.files || []);
+      docInput.value = '';
+      for (const file of files) {
+        if (pendingDocs.length >= window.Attach.MAX_FILES) {
+          toast('too many attachments (max ' + window.Attach.MAX_FILES + ')', 'warn');
+          break;
+        }
+        try {
+          window.Attach.check(file);
+          const att = await window.Attach.extract(file);
+          pendingDocs.push(att);
+          window.Attach.addChip(docChips, att, {
+            onRemove: () => {
+              const i = pendingDocs.indexOf(att);
+              if (i >= 0) pendingDocs.splice(i, 1);
+            },
+          });
+        } catch (err) {
+          toast((file && file.name ? file.name + ' — ' : '') + err.message, 'error');
+        }
+      }
+    });
 
     let smartPick = null;
     try { smartPick = JSON.parse(localStorage.getItem('research.smartModel') || 'null'); } catch (e) { smartPick = null; }
@@ -359,6 +403,9 @@ window.Research = (() => {
       try {
         const payload = { query: q, depth: activeDepth, model_policy: 'local_only' };
         if (smartPick) payload.model_override = { provider_id: smartPick.provider_id, model: smartPick.model };
+        if (pendingDocs.length) {
+          payload.docs = pendingDocs.map((a) => ({ name: a.name, ext: a.ext, size: a.size, chars: a.chars, text: a.text }));
+        }
         if (opts.conversationId) payload.conversation_id = opts.conversationId;
         const res = await fetch('/api/research', {
           method: 'POST',
@@ -368,6 +415,8 @@ window.Research = (() => {
         let out = {};
         try { out = await res.json(); } catch (e) { /* keep */ }
         if (!res.ok) throw new Error(out.detail || 'HTTP ' + res.status);
+        pendingDocs.length = 0;
+        docChips.textContent = '';
         toast('RUN QUEUED', 'ok');
         window.UI.closeModal();
         if (root) render(root);

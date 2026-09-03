@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 import db
 from backup import is_restoring
+from chat import attachments as attachments_mod
 from research import config, events, runner, store
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,14 @@ class ModelOverride(BaseModel):
     model: str
 
 
+class DocIn(BaseModel):
+    name: str
+    ext: str
+    size: int = 0
+    chars: int = 0
+    text: str
+
+
 class StartRequest(BaseModel):
     query: str
     depth: str = "standard"
@@ -40,6 +49,7 @@ class StartRequest(BaseModel):
     conversation_id: int | None = None
     config_overrides: dict | None = None
     model_override: ModelOverride | None = None
+    docs: list[DocIn] | None = None
 
 
 def _run_dict(run: dict) -> dict:
@@ -95,6 +105,14 @@ async def start_run(body: StartRequest) -> dict:
         )
         if not exists:
             raise HTTPException(status_code=400, detail="unknown provider id")
+    docs = None
+    if body.docs:
+        try:
+            docs = attachments_mod.validate_docs(
+                [d.model_dump() for d in body.docs]
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     try:
         resolved = config.resolve_config(body.depth, body.config_overrides)
     except ValueError as exc:
@@ -107,6 +125,8 @@ async def start_run(body: StartRequest) -> dict:
     run = await store.create_run(
         query, body.depth, body.model_policy, body.conversation_id, resolved
     )
+    if docs:
+        await store.add_run_docs(str(run["id"]), docs)
     if body.conversation_id is not None:
         # Chat integration (PHASE_9): one-line system notice via the normal chat
         # path. build_messages filters system rows out of the prompt.
@@ -147,6 +167,10 @@ async def run_detail(run_id: str) -> dict:
     detail["id"] = str(run["id"])
     detail["tasks"] = await store.get_tasks(run_id)
     detail["counts"] = await store.run_counts(run_id)
+    detail["docs"] = [
+        {"name": d["name"], "ext": d["ext"], "chars": int(d["chars"])}
+        for d in await store.get_run_docs(run_id)
+    ]
     return detail
 
 

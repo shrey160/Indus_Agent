@@ -197,6 +197,7 @@ async def run_pipeline(run_id: str) -> None:
             "roles": roles,
             "config": config_json,
             "run_started": started,
+            "docs": await store.get_run_docs(run_id),
         }
         ctx["metrics"] = _init_metrics()
         ctx["metrics"]["smart_source"] = "user" if smart_override else "auto"
