@@ -10,7 +10,7 @@ persisted via store.insert_tasks + update_run, and a `plan` event is appended.
 
 import logging
 
-from research import events, llm, scout, store
+from research import docs_block, events, llm, scout, store
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,11 @@ async def plan(ctx: dict) -> dict:
     except Exception:
         logger.exception("scout: unexpected failure — planning from query alone")
     user_content = query if digest is None else f"{query}\n\n{digest}"
+    # SP-Q3: the run's docs are the primary directive — a vague typed query
+    # ("follow the given instructions") must plan from the document content.
+    docs_text = docs_block.build(ctx.get("docs"))
+    if docs_text:
+        user_content = f"{user_content}\n\n{docs_text}"
     messages = [
         {"role": "system", "content": prompt},
         {"role": "user", "content": user_content},

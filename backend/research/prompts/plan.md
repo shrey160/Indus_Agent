@@ -24,6 +24,13 @@ Rules:
   of the question are actually covered online. Shape the sub-questions around
   what those results reveal. They are a sample, not the research itself — never
   answer the question in the plan, and never cite them as facts.
+- The user message may also carry USER-PROVIDED DOCUMENTS. These are the user's
+  own files and they outrank everything else: if the typed query is a vague
+  directive (e.g. "follow the given instructions"), the documents DEFINE what
+  must be researched — operationalize their instructions, required coverage,
+  scope and constraints into the sub-questions. Each explicit ask in a seed
+  prompt shapes at least one task. Never ignore the documents, never answer
+  them in the plan, and derive report_title from their subject matter.
 - If no preliminary results are present, plan from the query alone.
 - Each task question must be fully answerable on its own from web sources —
   never reference other tasks' answers.

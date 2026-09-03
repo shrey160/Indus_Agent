@@ -117,16 +117,16 @@ async def research_task(ctx: dict, task: dict) -> None:
     await store.set_task(task_id, "running")
 
     ctx["sources_added"] = 0
-    docs_pending = bool(ctx.get("docs"))
     queries = await _querygen(ctx, task)
+    if ctx.get("docs"):
+        # SP-Q3: doc notes land BEFORE search so seed instructions are always
+        # captured — LLM-only, no tool budget consumed, survives a blown budget.
+        await _docs_pass(ctx, task)
     reflect: dict = {}
     iterations = 0
     try:
         while True:
             await _search_and_fetch(ctx, task, queries)
-            if docs_pending and not ctx["budget_hit"]:
-                docs_pending = False
-                await _docs_pass(ctx, task)
             iterations += 1
             ctx["metrics"]["iterations"] += 1
             reflect = await _reflect(ctx, task, iterations)

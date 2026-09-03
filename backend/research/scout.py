@@ -17,7 +17,7 @@ import logging
 from urllib.parse import urlsplit
 
 from providers.base import fmt_err
-from research import events, store
+from research import docs_block, events, store
 from research.researcher import (
     _domain,
     _querygen,
@@ -50,7 +50,18 @@ async def gather_context(ctx: dict) -> str | None:
     cfg = ctx["config"]
     metrics = ctx["metrics"]
 
-    queries = await _querygen(ctx, {"idx": 0, "question": query, "angles": []})
+    # SP-Q3: with docs attached the typed query may be a vague directive —
+    # ground the scout queries in the document content instead.
+    question = query
+    docs_text = docs_block.build(ctx.get("docs"), per_doc=2000, total=4000)
+    if docs_text:
+        question = (
+            f"{query}\n\n{docs_text}\n\n"
+            "(The typed query may be a vague directive such as 'follow the given "
+            "instructions'. Generate search queries that cover the DOCUMENT "
+            "content above.)"
+        )
+    queries = await _querygen(ctx, {"idx": 0, "question": question, "angles": []})
     queries = [str(q).strip() for q in queries if str(q).strip()][:MAX_SCOUT_QUERIES]
     if not queries:
         return None
