@@ -24,6 +24,10 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       DATA_DIR: /data
       MCP_TOOLBOX_URL: http://toolbox:9000/mcp
+      ATTACH_MAX_FILES: ${ATTACH_MAX_FILES:-5}
+      ATTACH_MAX_BYTES: ${ATTACH_MAX_BYTES:-20971520}
+      ATTACH_MAX_CHARS: ${ATTACH_MAX_CHARS:-12000}
+      ATTACH_REINJECT_TURNS: ${ATTACH_REINJECT_TURNS:-2}
     volumes:
       - ./data:/data
     extra_hosts: ["host.docker.internal:host-gateway"]

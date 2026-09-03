@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -13,6 +13,7 @@ from memory import extractor
 from mcp_client import manager as mcp_manager
 from providers import registry
 from providers.base import ProviderHTTPError, fmt_err
+from . import attachments as attachments_mod
 from . import context
 from .titles import kickoff_title
 
@@ -30,9 +31,18 @@ def schedule_extraction(user_text: str, assistant_text: str, message_id: int | N
         logger.warning("failed to schedule memory extraction", exc_info=True)
 
 
+class Attachment(BaseModel):
+    name: str
+    ext: str
+    size: int = 0
+    chars: int = 0
+    text: str
+
+
 class ChatRequest(BaseModel):
     conversation_id: int | None = None
     message: str
+    attachments: list[Attachment] | None = None
 
 
 class PatchTitle(BaseModel):
@@ -67,6 +77,18 @@ async def resolve_active() -> tuple[dict | None, str | None, str | None, str | N
     return dict(state), state["active_model"], None, None
 
 
+@router.post("/extract")
+async def extract(file: UploadFile):
+    data = await file.read()
+    if len(data) > attachments_mod.ATTACH_MAX_BYTES:
+        limit_mb = attachments_mod.ATTACH_MAX_BYTES // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"file too large (max {limit_mb}MB)")
+    try:
+        return attachments_mod.extract_upload(file.filename or "", data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.post("/chat")
 async def chat(body: ChatRequest):
     if is_restoring():
@@ -85,6 +107,17 @@ async def chat(body: ChatRequest):
 
         return StreamingResponse(gated(), media_type="text/event-stream")
 
+    docs = None
+    if body.attachments:
+        try:
+            docs = attachments_mod.validate_docs(
+                [a.model_dump() for a in body.attachments]
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    if not body.message.strip() and not docs:
+        raise HTTPException(status_code=400, detail="message is required")
+
     conversation_id = body.conversation_id
     if conversation_id is None:
         conversation_id = await db.fetchval(
@@ -99,9 +132,10 @@ async def chat(body: ChatRequest):
                 "INSERT INTO conversations DEFAULT VALUES RETURNING id"
             )
     await db.execute(
-        "INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'user', $2)",
+        "INSERT INTO messages (conversation_id, role, content, attachments) VALUES ($1, 'user', $2, $3)",
         conversation_id,
         body.message,
+        json.dumps(docs) if docs else None,
     )
     messages, auto_sources = await context.build_messages(conversation_id)
     provider = registry.build_provider(provider_row)
@@ -296,7 +330,7 @@ async def delete_conversation(conversation_id: int) -> dict:
 async def conversation_messages(conversation_id: int) -> list[dict]:
     rows = await db.fetch(
         """
-        SELECT role, content, model, created_at, sources, tool_events, reasoning
+        SELECT role, content, model, created_at, sources, tool_events, reasoning, attachments
         FROM messages
         WHERE conversation_id = $1
         ORDER BY id
@@ -306,7 +340,7 @@ async def conversation_messages(conversation_id: int) -> list[dict]:
     result = []
     for row in rows:
         item = dict(row)
-        for key in ("sources", "tool_events"):
+        for key in ("sources", "tool_events", "attachments"):
             value = item.get(key)
             item[key] = json.loads(value) if value else None
         result.append(item)
