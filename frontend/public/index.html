@@ -37,8 +37,11 @@
         <div id="messages" class="messages"></div>
         <div id="new-output-pill" class="new-output-pill hidden">&#9660; NEW OUTPUT</div>
         <form id="chat-form" class="composer">
+          <div id="attach-chips" class="attach-chips"></div>
           <textarea id="chat-input" rows="2" placeholder="Message&hellip;" aria-label="Message"></textarea>
           <div class="composer-side">
+            <button id="attach-btn" class="btn composer-chip" type="button" title="Attach a file">[ FILE ]</button>
+            <input id="attach-input" type="file" accept=".txt,.md,.pdf,.docx" multiple class="hidden">
             <button id="research-chip" class="btn composer-chip" type="button" title="Start a deep research run">[ RESEARCH &#9656; ]</button>
             <button id="send-btn" type="submit" class="btn btn-primary">[ SEND &#9166; ]</button>
             <span class="composer-hint">&#9166; SEND &middot; &#8679;&#9166; NEWLINE</span>
@@ -50,6 +53,7 @@
   </div>
   <script src="/js/ui.js"></script>
   <script src="/js/markdown.js"></script>
+  <script src="/js/attach.js"></script>
   <script src="/js/sidebar.js"></script>
   <script src="/js/providers.js"></script>
   <script src="/js/memory.js"></script>

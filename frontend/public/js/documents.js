@@ -240,7 +240,7 @@ window.Documents = (() => {
     root.appendChild(toolbar);
 
     if (!docs.length) {
-      root.appendChild(el('div', 'models-empty', 'NO DOCUMENTS — DROP A FILE OR F9'));
+      root.appendChild(el('div', 'models-empty', 'NO DOCUMENTS — USE [ UPLOAD ] OR F9'));
       return;
     }
 
@@ -281,7 +281,9 @@ window.Documents = (() => {
       counter = 0;
       chatRoot.classList.remove('drop-highlight');
       if (ev.dataTransfer.files && ev.dataTransfer.files.length) {
-        uploadFiles(ev.dataTransfer.files);
+        if (window.Chat && window.Chat.attachFiles) {
+          window.Chat.attachFiles(ev.dataTransfer.files);
+        }
       }
     });
   }

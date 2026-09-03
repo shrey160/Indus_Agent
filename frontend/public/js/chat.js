@@ -6,7 +6,9 @@ window.Chat = (() => {
   let activeProviderId = null;
   let activeModelId = null;
   let openChips = [];
+  let pending = [];
   let messagesEl, inputEl, sendBtn, badgeEl, badgeText, dropdown, pillEl, searchWrap, searchInput;
+  let attachChipsEl, attachBtn, attachInput;
 
   const TOOL_ICONS = { 'web.search': '🔍', 'web.fetch': '📄', 'util.datetime': '🕐' };
 
@@ -285,7 +287,7 @@ window.Chat = (() => {
     wrap.appendChild(el('div', 'empty-wordmark', 'LOCAL · AI · HUB'));
     wrap.appendChild(el('div', 'empty-hint', 'F2 — Connect a provider'));
     wrap.appendChild(el('div', 'empty-hint', 'F4 — New chat'));
-    wrap.appendChild(el('div', 'empty-hint', 'DROP A FILE TO INDEX'));
+    wrap.appendChild(el('div', 'empty-hint', 'DROP A FILE TO ATTACH'));
     messagesEl.appendChild(wrap);
   }
 
@@ -390,8 +392,42 @@ window.Chat = (() => {
     }
   }
 
-  async function send(message) {
-    addLog('USER', 'role-user', message);
+  /* ── attachments (Phase 10) ── */
+  function clearPending() {
+    pending = [];
+    if (attachChipsEl) attachChipsEl.textContent = '';
+  }
+
+  async function addFiles(files) {
+    for (const file of files) {
+      if (pending.length >= window.Attach.MAX_FILES) {
+        window.UI.toast('too many attachments (max ' + window.Attach.MAX_FILES + ')', 'warn');
+        break;
+      }
+      try {
+        window.Attach.check(file);
+        const att = await window.Attach.extract(file);
+        pending.push(att);
+        window.Attach.addChip(attachChipsEl, att, {
+          onRemove: () => {
+            pending = pending.filter((p) => p !== att);
+          },
+        });
+      } catch (err) {
+        window.UI.toast((file && file.name ? file.name + ' — ' : '') + err.message, 'error');
+      }
+    }
+  }
+
+  async function send(message, atts) {
+    clearEmpty();
+    const was = atBottom();
+    const userLine = logLine('USER', 'role-user', message);
+    if (atts && atts.length) {
+      window.Attach.renderUserChips(userLine.content, atts);
+    }
+    messagesEl.appendChild(userLine.line);
+    scrollStick(was);
     const stream = addStreamingLine();
     const started = performance.now();
     abortController = new AbortController();
@@ -404,7 +440,13 @@ window.Chat = (() => {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ conversation_id: conversationId, message }),
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          message,
+          attachments: atts && atts.length
+            ? atts.map((a) => ({ name: a.name, ext: a.ext, size: a.size, chars: a.chars, text: a.text }))
+            : undefined,
+        }),
         signal: abortController.signal,
       });
       if (!res.ok) {
@@ -465,7 +507,7 @@ window.Chat = (() => {
             stream.body.appendChild(el('span', 'log-interrupt',
               '[stream interrupted' + (payload.detail ? ': ' + payload.detail : '') + ']'));
             const retry = el('button', 'btn', '[ \u27F3 RETRY ]');
-            retry.addEventListener('click', () => { send(message); });
+            retry.addEventListener('click', () => { send(message, atts); });
             const actions = el('div', 'log-actions');
             actions.appendChild(retry);
             stream.line.querySelector('.log-content').appendChild(actions);
@@ -709,7 +751,10 @@ window.Chat = (() => {
       } else {
         for (const m of msgs) {
           if (m.role === 'user') {
-            addLog('USER', 'role-user', m.content);
+            const userContent = addLog('USER', 'role-user', m.content);
+            if (m.attachments && m.attachments.length) {
+              window.Attach.renderUserChips(userContent, m.attachments);
+            }
           } else {
             if (m.tool_events && m.tool_events.length) {
               for (const ev of m.tool_events) toolChip(ev);
@@ -756,6 +801,7 @@ window.Chat = (() => {
   function newChat() {
     conversationId = null;
     messagesEl.textContent = '';
+    clearPending();
     showEmpty();
     inputEl.focus();
     document.dispatchEvent(new CustomEvent('hub:conversation'));
@@ -795,6 +841,16 @@ window.Chat = (() => {
     pillEl = document.getElementById('new-output-pill');
     searchWrap = document.getElementById('log-search');
     searchInput = document.getElementById('log-search-input');
+    attachChipsEl = document.getElementById('attach-chips');
+    attachBtn = document.getElementById('attach-btn');
+    attachInput = document.getElementById('attach-input');
+
+    attachBtn.addEventListener('click', () => attachInput.click());
+    attachInput.addEventListener('change', () => {
+      const files = Array.from(attachInput.files || []);
+      attachInput.value = '';
+      addFiles(files);
+    });
 
     sendBtn.addEventListener('click', (ev) => {
       if (streaming) {
@@ -806,19 +862,23 @@ window.Chat = (() => {
     document.getElementById('chat-form').addEventListener('submit', (ev) => {
       ev.preventDefault();
       const message = inputEl.value.trim();
-      if (!message || streaming) return;
+      if ((!message && !pending.length) || streaming) return;
+      const atts = pending.slice();
+      clearPending();
       inputEl.value = '';
       autogrow();
-      send(message);
+      send(message, atts);
     });
     inputEl.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter' && !ev.shiftKey) {
         ev.preventDefault();
         const message = inputEl.value.trim();
-        if (!message || streaming) return;
+        if ((!message && !pending.length) || streaming) return;
+        const atts = pending.slice();
+        clearPending();
         inputEl.value = '';
         autogrow();
-        send(message);
+        send(message, atts);
       }
     });
     inputEl.addEventListener('input', autogrow);
@@ -851,6 +911,7 @@ window.Chat = (() => {
     currentId: () => conversationId,
     addSysLine,
     toggleSearch,
+    attachFiles: (files) => { addFiles(Array.from(files || [])); },
     toast: (msg, kind) => window.UI.toast(msg, kind === 'error' ? 'error' : kind),
     isSearchOpen: () => !searchWrap.classList.contains('hidden'),
     closeSearch: () => {
